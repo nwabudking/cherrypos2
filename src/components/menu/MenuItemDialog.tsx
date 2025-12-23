@@ -127,18 +127,52 @@ export const MenuItemDialog = ({ open, onOpenChange, editingItem }: MenuItemDial
     },
   });
 
+  // Allowed image MIME types and max file size (5MB)
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate file type
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      toast({ 
+        title: "Invalid file type", 
+        description: "Please upload a JPEG, PNG, GIF, or WebP image.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      toast({ 
+        title: "File too large", 
+        description: "Image must be less than 5MB.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     setUploading(true);
     try {
-      const fileExt = file.name.split(".").pop();
+      // Get file extension from MIME type for security (not from filename)
+      const mimeToExt: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp'
+      };
+      const fileExt = mimeToExt[file.type] || 'jpg';
       const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("menu-images")
-        .upload(fileName, file);
+        .upload(fileName, file, {
+          contentType: file.type,
+          upsert: false
+        });
 
       if (uploadError) throw uploadError;
 
