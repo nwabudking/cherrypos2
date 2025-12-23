@@ -25,7 +25,7 @@ export const PlaceholderPage = ({ title, description }: PlaceholderPageProps) =>
 export { default as POS } from '@/pages/POS';
 export const Orders = () => <PlaceholderPage title="Orders" description="Order management coming soon" />;
 export const Tables = () => <PlaceholderPage title="Tables" description="Table management coming soon" />;
-export const Menu = () => <PlaceholderPage title="Menu Management" description="Menu editor coming soon" />;
+export { default as Menu } from '@/pages/MenuManagement';
 export const Bar = () => <PlaceholderPage title="Bar Orders" description="Bar management coming soon" />;
 export const Kitchen = () => <PlaceholderPage title="Kitchen Display" description="Kitchen display coming soon" />;
 export const Inventory = () => <PlaceholderPage title="Inventory" description="Inventory management coming soon" />;
