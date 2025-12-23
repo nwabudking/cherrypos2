@@ -31,5 +31,5 @@ export const Kitchen = () => <PlaceholderPage title="Kitchen Display" descriptio
 export const Inventory = () => <PlaceholderPage title="Inventory" description="Inventory management coming soon" />;
 export { default as Staff } from '@/pages/Staff';
 export const Customers = () => <PlaceholderPage title="Customers" description="Customer management coming soon" />;
-export const Reports = () => <PlaceholderPage title="Reports" description="Reports & analytics coming soon" />;
+export { default as Reports } from '@/pages/Reports';
 export const SettingsPage = () => <PlaceholderPage title="Settings" description="System settings coming soon" />;
