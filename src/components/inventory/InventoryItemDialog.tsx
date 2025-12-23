@@ -8,7 +8,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { InventoryItem } from "@/pages/Inventory";
+import type { Supplier } from "./SupplierDialog";
 
 interface InventoryItemDialogProps {
   item: InventoryItem | null;
@@ -17,6 +25,7 @@ interface InventoryItemDialogProps {
   onSave: (data: Partial<InventoryItem>) => void;
   isSaving: boolean;
   categories: string[];
+  suppliers?: Supplier[];
 }
 
 export const InventoryItemDialog = ({
@@ -26,6 +35,7 @@ export const InventoryItemDialog = ({
   onSave,
   isSaving,
   categories,
+  suppliers = [],
 }: InventoryItemDialogProps) => {
   const [formData, setFormData] = useState({
     name: "",
@@ -35,6 +45,7 @@ export const InventoryItemDialog = ({
     min_stock_level: 10,
     cost_per_unit: 0,
     supplier: "",
+    supplier_id: "",
   });
 
   useEffect(() => {
@@ -47,6 +58,7 @@ export const InventoryItemDialog = ({
         min_stock_level: item.min_stock_level,
         cost_per_unit: item.cost_per_unit || 0,
         supplier: item.supplier || "",
+        supplier_id: item.supplier_id || "",
       });
     } else {
       setFormData({
@@ -57,12 +69,14 @@ export const InventoryItemDialog = ({
         min_stock_level: 10,
         cost_per_unit: 0,
         supplier: "",
+        supplier_id: "",
       });
     }
   }, [item]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedSupplier = suppliers.find(s => s.id === formData.supplier_id);
     onSave({
       ...(item?.id && { id: item.id }),
       name: formData.name,
@@ -71,7 +85,8 @@ export const InventoryItemDialog = ({
       current_stock: formData.current_stock,
       min_stock_level: formData.min_stock_level,
       cost_per_unit: formData.cost_per_unit || null,
-      supplier: formData.supplier || null,
+      supplier: selectedSupplier?.name || formData.supplier || null,
+      supplier_id: formData.supplier_id || null,
     });
   };
 
@@ -154,12 +169,32 @@ export const InventoryItemDialog = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="supplier">Supplier</Label>
-              <Input
-                id="supplier"
-                value={formData.supplier}
-                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-              />
+              <Label>Supplier</Label>
+              {suppliers.length > 0 ? (
+                <Select
+                  value={formData.supplier_id}
+                  onValueChange={(value) => setFormData({ ...formData, supplier_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="supplier"
+                  value={formData.supplier}
+                  onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                  placeholder="Enter supplier name"
+                />
+              )}
             </div>
           </div>
 

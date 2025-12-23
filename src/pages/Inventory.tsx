@@ -9,6 +9,11 @@ import { InventoryItemDialog } from "@/components/inventory/InventoryItemDialog"
 import { StockMovementDialog } from "@/components/inventory/StockMovementDialog";
 import { LowStockAlert } from "@/components/inventory/LowStockAlert";
 import { AddCategoryDialog } from "@/components/inventory/AddCategoryDialog";
+import { SupplierDialog, type Supplier } from "@/components/inventory/SupplierDialog";
+import { SuppliersTable } from "@/components/inventory/SuppliersTable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Plus, Truck } from "lucide-react";
 
 export interface InventoryItem {
   id: string;
@@ -19,6 +24,7 @@ export interface InventoryItem {
   min_stock_level: number;
   cost_per_unit: number | null;
   supplier: string | null;
+  supplier_id: string | null;
   is_active: boolean | null;
   created_at: string | null;
   updated_at: string | null;
@@ -37,8 +43,10 @@ const Inventory = () => {
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [isMovementDialogOpen, setIsMovementDialogOpen] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [isSupplierDialogOpen, setIsSupplierDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [movementItem, setMovementItem] = useState<InventoryItem | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
 
   const { data: items = [], isLoading } = useQuery({
@@ -52,6 +60,20 @@ const Inventory = () => {
 
       if (error) throw error;
       return data as InventoryItem[];
+    },
+  });
+
+  const { data: suppliers = [], isLoading: suppliersLoading } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+
+      if (error) throw error;
+      return data as Supplier[];
     },
   });
 
@@ -111,6 +133,49 @@ const Inventory = () => {
     },
   });
 
+  const saveSupplierMutation = useMutation({
+    mutationFn: async (supplier: Partial<Supplier> & { id?: string }) => {
+      if (supplier.id) {
+        const { id, ...updateData } = supplier;
+        const { error } = await supabase
+          .from("suppliers")
+          .update(updateData)
+          .eq("id", id);
+        if (error) throw error;
+      } else {
+        const { id, ...insertData } = supplier;
+        const { error } = await supabase.from("suppliers").insert(insertData as any);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Supplier saved." });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      setIsSupplierDialogOpen(false);
+      setSelectedSupplier(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save supplier.", variant: "destructive" });
+    },
+  });
+
+  const deleteSupplierMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("suppliers")
+        .update({ is_active: false })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Deleted", description: "Supplier removed." });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete supplier.", variant: "destructive" });
+    },
+  });
+
   const stockMovementMutation = useMutation({
     mutationFn: async ({
       itemId,
@@ -135,7 +200,6 @@ const Inventory = () => {
         newStock = quantity;
       }
 
-      // Create movement record
       const { error: movementError } = await supabase.from("stock_movements").insert({
         inventory_item_id: itemId,
         movement_type: type,
@@ -148,7 +212,6 @@ const Inventory = () => {
 
       if (movementError) throw movementError;
 
-      // Update item stock
       const { error: updateError } = await supabase
         .from("inventory_items")
         .update({ current_stock: newStock })
@@ -189,35 +252,88 @@ const Inventory = () => {
     toast({ title: "Category Added", description: `"${category}" is now available for items.` });
   };
 
+  const handleAddSupplier = () => {
+    setSelectedSupplier(null);
+    setIsSupplierDialogOpen(true);
+  };
+
+  const handleEditSupplier = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setIsSupplierDialogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
-      <InventoryHeader
-        totalItems={items.length}
-        lowStockCount={lowStockItems.length}
-        onAddItem={handleAddItem}
-        onAddCategory={() => setIsCategoryDialogOpen(true)}
-        canManage={canManage}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        categoryFilter={categoryFilter}
-        setCategoryFilter={setCategoryFilter}
-        categories={categories}
-        showLowStock={showLowStock}
-        setShowLowStock={setShowLowStock}
-      />
+      <Tabs defaultValue="items" className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Inventory Management</h1>
+            <p className="text-muted-foreground">Track stock levels, manage inventory and suppliers</p>
+          </div>
+          <TabsList>
+            <TabsTrigger value="items">Items</TabsTrigger>
+            <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+          </TabsList>
+        </div>
 
-      {lowStockItems.length > 0 && (
-        <LowStockAlert items={lowStockItems} onViewItem={handleStockMovement} />
-      )}
+        <TabsContent value="items" className="space-y-6">
+          <InventoryHeader
+            totalItems={items.length}
+            lowStockCount={lowStockItems.length}
+            onAddItem={handleAddItem}
+            onAddCategory={() => setIsCategoryDialogOpen(true)}
+            canManage={canManage}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+            categories={categories}
+            showLowStock={showLowStock}
+            setShowLowStock={setShowLowStock}
+          />
 
-      <InventoryTable
-        items={filteredItems}
-        isLoading={isLoading}
-        onEdit={handleEditItem}
-        onDelete={(id) => deleteItemMutation.mutate(id)}
-        onStockMovement={handleStockMovement}
-        canManage={canManage}
-      />
+          {lowStockItems.length > 0 && (
+            <LowStockAlert items={lowStockItems} onViewItem={handleStockMovement} />
+          )}
+
+          <InventoryTable
+            items={filteredItems}
+            isLoading={isLoading}
+            onEdit={handleEditItem}
+            onDelete={(id) => deleteItemMutation.mutate(id)}
+            onStockMovement={handleStockMovement}
+            canManage={canManage}
+          />
+        </TabsContent>
+
+        <TabsContent value="suppliers" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Truck className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold">{suppliers.length} Suppliers</p>
+                <p className="text-sm text-muted-foreground">Manage your inventory suppliers</p>
+              </div>
+            </div>
+            {canManage && (
+              <Button onClick={handleAddSupplier}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Supplier
+              </Button>
+            )}
+          </div>
+
+          <SuppliersTable
+            suppliers={suppliers}
+            isLoading={suppliersLoading}
+            onEdit={handleEditSupplier}
+            onDelete={(id) => deleteSupplierMutation.mutate(id)}
+            canManage={canManage}
+          />
+        </TabsContent>
+      </Tabs>
 
       <InventoryItemDialog
         item={selectedItem}
@@ -226,6 +342,7 @@ const Inventory = () => {
         onSave={(data) => saveItemMutation.mutate(data)}
         isSaving={saveItemMutation.isPending}
         categories={categories}
+        suppliers={suppliers}
       />
 
       <AddCategoryDialog
@@ -233,6 +350,14 @@ const Inventory = () => {
         onOpenChange={setIsCategoryDialogOpen}
         existingCategories={categories}
         onAddCategory={handleAddCategory}
+      />
+
+      <SupplierDialog
+        supplier={selectedSupplier}
+        open={isSupplierDialogOpen}
+        onOpenChange={setIsSupplierDialogOpen}
+        onSave={(data) => saveSupplierMutation.mutate(data)}
+        isSaving={saveSupplierMutation.isPending}
       />
 
       <StockMovementDialog
