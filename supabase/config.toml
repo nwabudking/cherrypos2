@@ -1,1 +1,4 @@
 project_id = "ivtqvlzkrnvfoxscqouz"
+
+[functions.migrate-openpos]
+verify_jwt = false

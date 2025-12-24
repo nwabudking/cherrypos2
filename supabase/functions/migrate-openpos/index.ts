@@ -47,13 +47,13 @@ serve(async (req) => {
       throw new Error("Only super_admin can run migrations");
     }
 
-    // Connect to MySQL
+    // Connect to MySQL using environment variables
     const mysqlClient = await new Client().connect({
-      hostname: "suenox.ng",
-      username: "suenoxng_cherrypos",
-      db: "suenoxng_cherrypos",
-      password: "suenoxng_cherrypos",
-      port: 3306,
+      hostname: Deno.env.get("MIGRATION_MYSQL_HOST") || "suenox.ng",
+      username: Deno.env.get("MIGRATION_MYSQL_USER") || "suenoxng_cherrypos",
+      db: Deno.env.get("MIGRATION_MYSQL_DB") || "suenoxng_cherrypos",
+      password: Deno.env.get("MIGRATION_MYSQL_PASSWORD") || "suenoxng_cherrypos",
+      port: parseInt(Deno.env.get("MIGRATION_MYSQL_PORT") || "3306"),
     });
 
     const result: MigrationResult = {
