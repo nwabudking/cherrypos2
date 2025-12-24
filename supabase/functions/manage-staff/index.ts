@@ -21,16 +21,30 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
-    // Create admin client
+    console.log("Starting manage-staff function");
+    console.log("URL exists:", !!supabaseUrl);
+    console.log("Service key exists:", !!supabaseServiceKey);
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing environment variables");
+      return new Response(JSON.stringify({ error: "Server configuration error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    // Create admin client with service role
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
     // Verify the requesting user is authorized
     const authHeader = req.headers.get("Authorization");
+    console.log("Auth header present:", !!authHeader);
+    
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
         status: 401,
@@ -39,14 +53,21 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user: requestingUser }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    console.log("Token length:", token.length);
     
-    if (authError || !requestingUser) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
+    // Use the admin client to verify the JWT
+    const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
+    console.log("Auth result - error:", authError?.message, "user:", userData?.user?.id);
+    
+    if (authError || !userData?.user) {
+      console.error("Auth error:", authError);
+      return new Response(JSON.stringify({ error: "Invalid token", details: authError?.message }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    
+    const requestingUser = userData.user;
 
     // Check if requesting user has admin privileges
     const { data: roleData } = await supabaseAdmin
