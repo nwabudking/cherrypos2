@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.sync-menu-inventory]
 verify_jwt = false
+
+[functions.import-staff]
+verify_jwt = false
