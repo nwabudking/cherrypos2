@@ -29,16 +29,34 @@ interface EmployeeData {
   password?: string;
 }
 
+interface OrderItemData {
+  item_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+interface OrderData {
+  sale_id: number;
+  sale_time: string;
+  customer_name?: string;
+  total_amount: number;
+  payment_type?: string;
+  items: OrderItemData[];
+}
+
 interface MigrationPayload {
   categories: CategoryData[];
   items: ItemData[];
   employees?: EmployeeData[];
+  orders?: OrderData[];
 }
 
 interface MigrationResult {
   categories: number;
   menuItems: number;
   users: number;
+  orders: number;
   errors: string[];
 }
 
@@ -92,6 +110,7 @@ serve(async (req) => {
       categories: 0,
       menuItems: 0,
       users: 0,
+      orders: 0,
       errors: [],
     };
 
@@ -228,6 +247,72 @@ serve(async (req) => {
       }
       
       console.log(`Migrated ${result.users} users`);
+    }
+
+    // Step 4: Migrate orders
+    if (payload.orders && payload.orders.length > 0) {
+      console.log(`Processing ${payload.orders.length} orders`);
+      
+      for (const order of payload.orders) {
+        // Generate order number
+        const orderDate = new Date(order.sale_time);
+        const dateStr = orderDate.toISOString().slice(2, 10).replace(/-/g, '');
+        const orderNumber = `MIG-${dateStr}-${order.sale_id.toString().padStart(4, '0')}`;
+        
+        // Check if order already exists
+        const { data: existingOrder } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("order_number", orderNumber)
+          .maybeSingle();
+
+        if (existingOrder) {
+          continue; // Skip existing orders
+        }
+
+        // Calculate totals from items
+        const subtotal = order.items.reduce((sum, item) => sum + item.total_price, 0);
+        const totalAmount = order.total_amount || subtotal;
+
+        // Create order
+        const { data: newOrder, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            order_number: orderNumber,
+            order_type: "dine-in",
+            status: "completed",
+            subtotal: subtotal,
+            total_amount: totalAmount,
+            vat_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            notes: order.customer_name ? `Customer: ${order.customer_name}` : `Migrated from OpenPOS (Sale #${order.sale_id})`,
+            created_at: order.sale_time,
+          })
+          .select("id")
+          .single();
+
+        if (orderError) {
+          result.errors.push(`Order ${order.sale_id}: ${orderError.message}`);
+          continue;
+        }
+
+        // Create order items
+        if (newOrder) {
+          for (const item of order.items) {
+            await supabase.from("order_items").insert({
+              order_id: newOrder.id,
+              item_name: item.item_name,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              total_price: item.total_price,
+            });
+          }
+          result.orders++;
+        }
+      }
+      
+      console.log(`Migrated ${result.orders} orders`);
     }
 
     return new Response(

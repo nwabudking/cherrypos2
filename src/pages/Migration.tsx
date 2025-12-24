@@ -13,6 +13,7 @@ interface MigrationResult {
   categories: number;
   menuItems: number;
   users: number;
+  orders: number;
   errors: string[];
 }
 
@@ -37,6 +38,22 @@ interface EmployeeData {
   email: string;
   username: string;
   password?: string;
+}
+
+interface OrderData {
+  sale_id: number;
+  sale_time: string;
+  customer_name?: string;
+  total_amount: number;
+  payment_type?: string;
+  items: OrderItemData[];
+}
+
+interface OrderItemData {
+  item_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
 }
 
 // Parse SQL INSERT statements for ospos_items
@@ -135,6 +152,75 @@ function parseEmployeesFromSQL(sql: string): EmployeeData[] {
   }
   
   return employees;
+}
+
+// Parse SQL INSERT statements for ospos_sales (orders)
+function parseOrdersFromSQL(sql: string): OrderData[] {
+  const orders: OrderData[] = [];
+  const orderItemsMap = new Map<number, OrderItemData[]>();
+  
+  // First parse sales_items to build the items map
+  const itemsPattern = /INSERT\s+INTO\s+`?ospos_sales_items`?\s*\([^)]+\)\s*VALUES\s*((?:\([^)]+\),?\s*)+)/gi;
+  const itemsMatches = sql.matchAll(itemsPattern);
+  
+  for (const match of itemsMatches) {
+    const valuesStr = match[1];
+    const tuplePattern = /\(([^)]+)\)/g;
+    const tuples = valuesStr.matchAll(tuplePattern);
+    
+    for (const tuple of tuples) {
+      const values = parseCSVValues(tuple[1]);
+      // ospos_sales_items: sale_id, item_id, description, serialnumber, line, quantity_purchased, item_cost_price, item_unit_price, ...
+      if (values.length >= 8) {
+        const saleId = parseInt(cleanSQLString(values[0])) || 0;
+        const item: OrderItemData = {
+          item_name: cleanSQLString(values[2]) || `Item ${values[1]}`,
+          quantity: parseInt(cleanSQLString(values[5])) || 1,
+          unit_price: parseFloat(cleanSQLString(values[7])) || 0,
+          total_price: (parseInt(cleanSQLString(values[5])) || 1) * (parseFloat(cleanSQLString(values[7])) || 0),
+        };
+        
+        if (!orderItemsMap.has(saleId)) {
+          orderItemsMap.set(saleId, []);
+        }
+        orderItemsMap.get(saleId)!.push(item);
+      }
+    }
+  }
+  
+  // Then parse sales
+  const salesPattern = /INSERT\s+INTO\s+`?ospos_sales`?\s*\([^)]+\)\s*VALUES\s*((?:\([^)]+\),?\s*)+)/gi;
+  const salesMatches = sql.matchAll(salesPattern);
+  
+  for (const match of salesMatches) {
+    const valuesStr = match[1];
+    const tuplePattern = /\(([^)]+)\)/g;
+    const tuples = valuesStr.matchAll(tuplePattern);
+    
+    for (const tuple of tuples) {
+      const values = parseCSVValues(tuple[1]);
+      // ospos_sales: sale_id, sale_time, customer_id, employee_id, comment, invoice_number, ...
+      if (values.length >= 2) {
+        const saleId = parseInt(cleanSQLString(values[0])) || 0;
+        const items = orderItemsMap.get(saleId) || [];
+        const totalAmount = items.reduce((sum, item) => sum + item.total_price, 0);
+        
+        const order: OrderData = {
+          sale_id: saleId,
+          sale_time: cleanSQLString(values[1]) || new Date().toISOString(),
+          customer_name: cleanSQLString(values[4]) || undefined,
+          total_amount: totalAmount,
+          items: items,
+        };
+        
+        if (order.items.length > 0) {
+          orders.push(order);
+        }
+      }
+    }
+  }
+  
+  return orders;
 }
 
 // Parse SQL INSERT statements for categories (ospos uses 'category' field in items table)
@@ -251,12 +337,13 @@ export default function Migration() {
       return;
     }
 
-    // Parse SQL to extract items, categories, and employees
+    // Parse SQL to extract items, categories, employees, and orders
     const items = parseItemsFromSQL(sqlData);
     const categories = parseCategoriesFromItems(items);
     const employees = parseEmployeesFromSQL(sqlData);
+    const orders = parseOrdersFromSQL(sqlData);
 
-    if (items.length === 0 && employees.length === 0) {
+    if (items.length === 0 && employees.length === 0 && orders.length === 0) {
       toast.error("No data found in SQL dump. Make sure the file contains INSERT statements.");
       return;
     }
@@ -265,9 +352,10 @@ export default function Migration() {
     if (categories.length > 0) parts.push(`${categories.length} categories`);
     if (items.length > 0) parts.push(`${items.length} items`);
     if (employees.length > 0) parts.push(`${employees.length} users`);
+    if (orders.length > 0) parts.push(`${orders.length} orders`);
     toast.info(`Found ${parts.join(', ')} to migrate`);
 
-    const payload = { categories, items, employees };
+    const payload = { categories, items, employees, orders };
     await executeMigration(payload);
   };
 
@@ -291,7 +379,7 @@ export default function Migration() {
     await executeMigration(parsedData);
   };
 
-  const executeMigration = async (payload: { categories: CategoryData[]; items: ItemData[]; employees?: EmployeeData[] }) => {
+  const executeMigration = async (payload: { categories: CategoryData[]; items: ItemData[]; employees?: EmployeeData[]; orders?: OrderData[] }) => {
     setIsRunning(true);
     setResult(null);
     setError(null);
@@ -501,6 +589,7 @@ export default function Migration() {
               <p><strong>Categories imported:</strong> {result.categories}</p>
               <p><strong>Menu items imported:</strong> {result.menuItems}</p>
               <p><strong>Users imported:</strong> {result.users || 0}</p>
+              <p><strong>Orders imported:</strong> {result.orders || 0}</p>
               {result.errors.length > 0 && (
                 <div className="mt-4">
                   <p className="font-medium text-amber-600">Warnings:</p>
