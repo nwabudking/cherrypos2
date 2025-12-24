@@ -53,7 +53,7 @@ const POS = () => {
     queryFn: async () => {
       let query = supabase
         .from("menu_items")
-        .select("*, menu_categories(name), inventory_items:inventory_item_id(id, current_stock, unit)")
+        .select("*, menu_categories(name), inventory_items:inventory_item_id(id, current_stock, min_stock_level, unit)")
         .eq("is_active", true);
       
       if (selectedCategory) {

@@ -10,7 +10,7 @@ interface MenuItem {
   price: number;
   menu_categories: { name: string } | null;
   track_inventory?: boolean;
-  inventory_items?: { id: string; current_stock: number; unit: string } | null;
+  inventory_items?: { id: string; current_stock: number; min_stock_level: number; unit: string } | null;
 }
 
 interface MenuGridProps {
@@ -29,11 +29,13 @@ const formatPrice = (price: number) => {
 export const MenuGrid = ({ items, onAddToCart }: MenuGridProps) => {
   const getStockInfo = (item: MenuItem) => {
     if (!item.track_inventory || !item.inventory_items) {
-      return { hasStock: true, stock: null };
+      return { hasStock: true, stock: null, isLow: false };
     }
+    const { current_stock, min_stock_level } = item.inventory_items;
     return {
-      hasStock: item.inventory_items.current_stock > 0,
-      stock: item.inventory_items.current_stock,
+      hasStock: current_stock > 0,
+      stock: current_stock,
+      isLow: current_stock > 0 && current_stock <= min_stock_level,
       unit: item.inventory_items.unit,
     };
   };
@@ -44,7 +46,7 @@ export const MenuGrid = ({ items, onAddToCart }: MenuGridProps) => {
         {items.map((item) => {
           const stockInfo = getStockInfo(item);
           const isOutOfStock = !stockInfo.hasStock;
-          const isLowStock = stockInfo.stock !== null && stockInfo.stock > 0 && stockInfo.stock <= 5;
+          const isLowStock = stockInfo.isLow;
 
           return (
             <Card
