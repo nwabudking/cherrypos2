@@ -126,9 +126,10 @@ const POS = () => {
       // Deduct stock for tracked items
       for (const cartItem of cart) {
         const menuItem = menuItems.find((m) => m.id === cartItem.menuItemId);
-        if (menuItem?.track_inventory && menuItem?.inventory_item_id) {
+        if (menuItem?.track_inventory && menuItem?.inventory_item_id && menuItem?.inventory_items) {
           const invItem = menuItem.inventory_items;
-          const newStock = invItem.current_stock - cartItem.quantity;
+          const previousStock = invItem.current_stock ?? 0;
+          const newStock = previousStock - cartItem.quantity;
           
           // Update inventory stock
           await supabase
@@ -141,7 +142,7 @@ const POS = () => {
             inventory_item_id: menuItem.inventory_item_id,
             movement_type: "out",
             quantity: cartItem.quantity,
-            previous_stock: invItem.current_stock,
+            previous_stock: previousStock,
             new_stock: newStock,
             notes: `Sold via POS - Order ${orderNumber}`,
             reference: order.id,
