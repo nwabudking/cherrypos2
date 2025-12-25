@@ -1,31 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { ordersApi } from "@/lib/api/orders";
 import { Wine, Clock, CheckCircle2, RefreshCw } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
-
-interface OrderItem {
-  id: string;
-  item_name: string;
-  quantity: number;
-  notes: string | null;
-  menu_item_id: string | null;
-}
-
-interface Order {
-  id: string;
-  order_number: string;
-  order_type: string;
-  table_number: string | null;
-  status: string;
-  created_at: string;
-  order_items: OrderItem[];
-}
+import { formatDistanceToNow } from "date-fns";
 
 const orderTypeLabels: Record<string, string> = {
   dine_in: "Dine In",
@@ -39,105 +21,19 @@ const Bar = () => {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"pending" | "preparing" | "all">("pending");
 
-  // Fetch bar orders (orders with bar items - drinks category)
+  // Fetch bar orders
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["bar-orders", filter],
     queryFn: async () => {
-      // First get drink category IDs
-      const { data: drinkCategories } = await supabase
-        .from("menu_categories")
-        .select("id")
-        .or("name.ilike.%drink%,name.ilike.%beverage%,name.ilike.%cocktail%,name.ilike.%wine%,name.ilike.%beer%,name.ilike.%soft%");
-
-      const categoryIds = drinkCategories?.map(c => c.id) || [];
-
-      let query = supabase
-        .from("orders")
-        .select(`
-          id,
-          order_number,
-          order_type,
-          table_number,
-          status,
-          created_at,
-          order_items!inner (
-            id,
-            item_name,
-            quantity,
-            notes,
-            menu_item_id
-          )
-        `)
-        .order("created_at", { ascending: true });
-
-      if (filter === "pending") {
-        query = query.eq("status", "pending");
-      } else if (filter === "preparing") {
-        query = query.eq("status", "preparing");
-      } else {
-        query = query.in("status", ["pending", "preparing", "ready"]);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      // Filter orders to only include those with bar items
-      if (categoryIds.length > 0) {
-        const { data: barMenuItems } = await supabase
-          .from("menu_items")
-          .select("id")
-          .in("category_id", categoryIds);
-
-        const barItemIds = barMenuItems?.map(item => item.id) || [];
-
-        return (data as Order[]).filter(order =>
-          order.order_items.some(item => 
-            item.menu_item_id && barItemIds.includes(item.menu_item_id)
-          )
-        ).map(order => ({
-          ...order,
-          order_items: order.order_items.filter(item =>
-            item.menu_item_id && barItemIds.includes(item.menu_item_id)
-          )
-        }));
-      }
-
-      return data as Order[];
+      const statusFilter = filter === "all" ? undefined : filter;
+      return ordersApi.getOrders({ status: statusFilter });
     },
+    refetchInterval: 10000, // Refresh every 10 seconds
   });
-
-  // Real-time subscription
-  useEffect(() => {
-    const channel = supabase
-      .channel("bar-orders-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["bar-orders"] });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "order_items" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["bar-orders"] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status })
-        .eq("id", orderId);
-      if (error) throw error;
+      return ordersApi.updateOrderStatus(orderId, status);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bar-orders"] });
@@ -243,12 +139,12 @@ const Bar = () => {
                     <CardTitle className="text-lg">{order.order_number}</CardTitle>
                     <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(order.created_at!), {
+                        addSuffix: true,
+                      })}
                     </div>
                   </div>
-                  <Badge className={getStatusColor(order.status)}>
-                    {order.status}
-                  </Badge>
+                  <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <Badge variant="outline" className="text-xs">
@@ -264,7 +160,7 @@ const Bar = () => {
 
               <ScrollArea className="flex-1 max-h-48">
                 <CardContent className="pt-0 space-y-2">
-                  {order.order_items.map((item) => (
+                  {order.items?.map((item) => (
                     <div
                       key={item.id}
                       className="flex items-start gap-2 p-2 rounded bg-muted/50"

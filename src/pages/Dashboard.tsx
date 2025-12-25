@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { LowStockDialog } from '@/components/dashboard/LowStockDialog';
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LowStockDialog } from "@/components/dashboard/LowStockDialog";
+import { ordersApi } from "@/lib/api/orders";
+import { inventoryApi } from "@/lib/api/inventory";
+import { menuApi } from "@/lib/api/menu";
 import {
   DollarSign,
   ShoppingCart,
@@ -14,25 +16,37 @@ import {
   Users,
   Clock,
   Utensils,
-} from 'lucide-react';
-import { format, startOfDay, endOfDay } from 'date-fns';
+} from "lucide-react";
+import { format, startOfDay, endOfDay } from "date-fns";
 
 interface KPICardProps {
   title: string;
   value: string;
   change?: string;
-  changeType?: 'positive' | 'negative' | 'neutral';
+  changeType?: "positive" | "negative" | "neutral";
   icon: React.ElementType;
   iconColor?: string;
   isLoading?: boolean;
 }
 
-const KPICard = ({ title, value, change, changeType = 'neutral', icon: Icon, iconColor, isLoading }: KPICardProps) => (
+const KPICard = ({
+  title,
+  value,
+  change,
+  changeType = "neutral",
+  icon: Icon,
+  iconColor,
+  isLoading,
+}: KPICardProps) => (
   <Card className="bg-card border-border hover:border-primary/30 transition-colors">
     <CardHeader className="flex flex-row items-center justify-between pb-2">
-      <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-      <div className={`p-2 rounded-lg ${iconColor || 'bg-primary/10'}`}>
-        <Icon className={`h-4 w-4 ${iconColor ? 'text-primary-foreground' : 'text-primary'}`} />
+      <CardTitle className="text-sm font-medium text-muted-foreground">
+        {title}
+      </CardTitle>
+      <div className={`p-2 rounded-lg ${iconColor || "bg-primary/10"}`}>
+        <Icon
+          className={`h-4 w-4 ${iconColor ? "text-primary-foreground" : "text-primary"}`}
+        />
       </div>
     </CardHeader>
     <CardContent>
@@ -42,11 +56,15 @@ const KPICard = ({ title, value, change, changeType = 'neutral', icon: Icon, ico
         <>
           <div className="text-2xl font-bold text-foreground">{value}</div>
           {change && (
-            <p className={`text-xs mt-1 ${
-              changeType === 'positive' ? 'text-emerald-500' :
-              changeType === 'negative' ? 'text-destructive' :
-              'text-muted-foreground'
-            }`}>
+            <p
+              className={`text-xs mt-1 ${
+                changeType === "positive"
+                  ? "text-emerald-500"
+                  : changeType === "negative"
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
               {change}
             </p>
           )}
@@ -63,83 +81,51 @@ const Dashboard = () => {
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
 
-  // Fetch today's orders with real-time subscription
-  const { data: todayOrders = [], isLoading: ordersLoading, refetch: refetchOrders } = useQuery({
-    queryKey: ['dashboard-orders', format(today, 'yyyy-MM-dd')],
+  // Fetch today's orders
+  const { data: todayOrders = [], isLoading: ordersLoading } = useQuery({
+    queryKey: ["dashboard-orders", format(today, "yyyy-MM-dd")],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, order_items(*), payments(*)')
-        .gte('created_at', todayStart.toISOString())
-        .lte('created_at', todayEnd.toISOString())
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data;
+      const orders = await ordersApi.getOrders({
+        startDate: todayStart.toISOString(),
+        endDate: todayEnd.toISOString(),
+      });
+      return orders;
     },
   });
 
   // Fetch low stock items
-  const { data: lowStockItems = [], isLoading: inventoryLoading, refetch: refetchInventory } = useQuery({
-    queryKey: ['dashboard-low-stock'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('is_active', true);
-      if (error) throw error;
-      return data.filter(item => item.current_stock <= item.min_stock_level);
-    },
+  const { data: lowStockItems = [], isLoading: inventoryLoading } = useQuery({
+    queryKey: ["dashboard-low-stock"],
+    queryFn: () => inventoryApi.getLowStockItems(),
   });
 
   // Fetch menu items count
-  const { data: menuItemsCount = 0 } = useQuery({
-    queryKey: ['dashboard-menu-count'],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from('menu_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
-      if (error) throw error;
-      return count || 0;
-    },
+  const { data: menuItems = [] } = useQuery({
+    queryKey: ["dashboard-menu-count"],
+    queryFn: () => menuApi.getActiveMenuItems(),
   });
 
-  // Real-time subscription for orders
-  useEffect(() => {
-    const channel = supabase
-      .channel('dashboard-orders')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          refetchOrders();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'inventory_items' },
-        () => {
-          refetchInventory();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [refetchOrders, refetchInventory]);
+  const menuItemsCount = menuItems.length;
 
   // Calculate metrics
-  const completedOrders = todayOrders.filter(o => o.status === 'completed');
-  const activeOrders = todayOrders.filter(o => ['pending', 'preparing', 'ready'].includes(o.status));
-  const dailySales = completedOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+  const completedOrders = todayOrders.filter((o) => o.status === "completed");
+  const activeOrders = todayOrders.filter((o) =>
+    ["pending", "preparing", "ready"].includes(o.status)
+  );
+  const dailySales = completedOrders.reduce(
+    (sum, o) => sum + Number(o.total_amount),
+    0
+  );
   const totalOrders = completedOrders.length;
   const avgOrderValue = totalOrders > 0 ? dailySales / totalOrders : 0;
 
   // Get top selling items from today's orders
-  const itemSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-  todayOrders.forEach(order => {
-    order.order_items?.forEach((item: any) => {
+  const itemSales: Record<
+    string,
+    { name: string; quantity: number; revenue: number }
+  > = {};
+  todayOrders.forEach((order) => {
+    order.items?.forEach((item) => {
       if (!itemSales[item.item_name]) {
         itemSales[item.item_name] = { name: item.item_name, quantity: 0, revenue: 0 };
       }
@@ -153,9 +139,15 @@ const Dashboard = () => {
     .slice(0, 4);
 
   // Recent orders
-  const recentOrders = todayOrders.slice(0, 4).map(order => ({
+  const recentOrders = todayOrders.slice(0, 4).map((order) => ({
     id: order.order_number,
-    table: order.table_number || (order.order_type === 'takeaway' ? 'Takeaway' : order.order_type === 'delivery' ? 'Delivery' : 'Bar'),
+    table:
+      order.table_number ||
+      (order.order_type === "takeaway"
+        ? "Takeaway"
+        : order.order_type === "delivery"
+        ? "Delivery"
+        : "Bar"),
     amount: `₦${Number(order.total_amount).toLocaleString()}`,
     status: order.status.charAt(0).toUpperCase() + order.status.slice(1),
     time: getTimeAgo(new Date(order.created_at!)),
@@ -163,7 +155,7 @@ const Dashboard = () => {
 
   function getTimeAgo(date: Date) {
     const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
-    if (minutes < 1) return 'Just now';
+    if (minutes < 1) return "Just now";
     if (minutes < 60) return `${minutes} min ago`;
     const hours = Math.floor(minutes / 60);
     return `${hours}h ago`;
@@ -171,9 +163,9 @@ const Dashboard = () => {
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
   };
 
   const isLoading = ordersLoading || inventoryLoading;
@@ -183,7 +175,7 @@ const Dashboard = () => {
       {/* Welcome header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">
-          {getGreeting()}, {user?.full_name?.split(' ')[0] || 'there'}!
+          {getGreeting()}, {user?.full_name?.split(" ")[0] || "there"}!
         </h1>
         <p className="text-muted-foreground">
           Here's what's happening at Cherry Dining Lounge today.
@@ -204,7 +196,7 @@ const Dashboard = () => {
         <KPICard
           title="Active Orders"
           value={activeOrders.length.toString()}
-          change={`${activeOrders.filter(o => o.status === 'pending').length} pending`}
+          change={`${activeOrders.filter((o) => o.status === "pending").length} pending`}
           changeType="neutral"
           icon={ShoppingCart}
           isLoading={isLoading}
@@ -217,9 +209,9 @@ const Dashboard = () => {
           icon={Grid3X3}
           isLoading={isLoading}
         />
-        <div 
+        <div
           onClick={() => lowStockItems.length > 0 && setLowStockDialogOpen(true)}
-          className={lowStockItems.length > 0 ? 'cursor-pointer' : ''}
+          className={lowStockItems.length > 0 ? "cursor-pointer" : ""}
         >
           <KPICard
             title="Low Stock Alerts"
@@ -252,10 +244,14 @@ const Dashboard = () => {
           <CardContent>
             {isLoading ? (
               <div className="space-y-4">
-                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
               </div>
             ) : recentOrders.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No orders yet today</p>
+              <p className="text-muted-foreground text-center py-8">
+                No orders yet today
+              </p>
             ) : (
               <div className="space-y-4">
                 {recentOrders.map((order) => (
@@ -274,12 +270,17 @@ const Dashboard = () => {
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-foreground">{order.amount}</p>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        order.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-500' :
-                        order.status === 'Ready' ? 'bg-amber-500/20 text-amber-500' :
-                        order.status === 'Preparing' ? 'bg-primary/20 text-primary' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          order.status === "Completed"
+                            ? "bg-emerald-500/20 text-emerald-500"
+                            : order.status === "Ready"
+                            ? "bg-amber-500/20 text-amber-500"
+                            : order.status === "Preparing"
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {order.status}
                       </span>
                     </div>
@@ -301,10 +302,14 @@ const Dashboard = () => {
           <CardContent>
             {isLoading ? (
               <div className="space-y-4">
-                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
               </div>
             ) : topSellingItems.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No sales yet today</p>
+              <p className="text-muted-foreground text-center py-8">
+                No sales yet today
+              </p>
             ) : (
               <div className="space-y-4">
                 {topSellingItems.map((item, index) => (
@@ -313,20 +318,29 @@ const Dashboard = () => {
                     className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                        index === 0 ? 'bg-amber-500/20 text-amber-500' :
-                        index === 1 ? 'bg-muted-foreground/20 text-muted-foreground' :
-                        index === 2 ? 'bg-primary/20 text-primary' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                          index === 0
+                            ? "bg-amber-500/20 text-amber-500"
+                            : index === 1
+                            ? "bg-muted-foreground/20 text-muted-foreground"
+                            : index === 2
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {index + 1}
                       </div>
                       <div>
                         <p className="font-medium text-foreground">{item.name}</p>
-                        <p className="text-sm text-muted-foreground">{item.quantity} sold</p>
+                        <p className="text-sm text-muted-foreground">
+                          {item.quantity} sold
+                        </p>
                       </div>
                     </div>
-                    <p className="font-medium text-foreground">₦{item.revenue.toLocaleString()}</p>
+                    <p className="font-medium text-foreground">
+                      ₦{item.revenue.toLocaleString()}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -341,8 +355,12 @@ const Dashboard = () => {
           <div className="flex items-center gap-3">
             <Users className="w-8 h-8 text-primary" />
             <div>
-              {isLoading ? <Skeleton className="h-8 w-12" /> : (
-                <p className="text-2xl font-bold text-foreground">{todayOrders.length}</p>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  {todayOrders.length}
+                </p>
               )}
               <p className="text-sm text-muted-foreground">Total Orders</p>
             </div>
@@ -352,8 +370,12 @@ const Dashboard = () => {
           <div className="flex items-center gap-3">
             <ShoppingCart className="w-8 h-8 text-primary" />
             <div>
-              {isLoading ? <Skeleton className="h-8 w-12" /> : (
-                <p className="text-2xl font-bold text-foreground">{completedOrders.length}</p>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  {completedOrders.length}
+                </p>
               )}
               <p className="text-sm text-muted-foreground">Completed</p>
             </div>
@@ -363,7 +385,9 @@ const Dashboard = () => {
           <div className="flex items-center gap-3">
             <DollarSign className="w-8 h-8 text-primary" />
             <div>
-              {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
                 <p className="text-2xl font-bold text-foreground">
                   ₦{avgOrderValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </p>
@@ -372,15 +396,27 @@ const Dashboard = () => {
             </div>
           </div>
         </Card>
-        <Card 
-          className={`bg-card border-border p-4 ${lowStockItems.length > 0 ? 'cursor-pointer hover:border-primary/30 transition-colors' : ''}`}
+        <Card
+          className={`bg-card border-border p-4 ${
+            lowStockItems.length > 0
+              ? "cursor-pointer hover:border-primary/30 transition-colors"
+              : ""
+          }`}
           onClick={() => lowStockItems.length > 0 && setLowStockDialogOpen(true)}
         >
           <div className="flex items-center gap-3">
-            <AlertTriangle className={`w-8 h-8 ${lowStockItems.length > 0 ? 'text-destructive' : 'text-emerald-500'}`} />
+            <AlertTriangle
+              className={`w-8 h-8 ${
+                lowStockItems.length > 0 ? "text-destructive" : "text-emerald-500"
+              }`}
+            />
             <div>
-              {isLoading ? <Skeleton className="h-8 w-12" /> : (
-                <p className="text-2xl font-bold text-foreground">{lowStockItems.length}</p>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  {lowStockItems.length}
+                </p>
               )}
               <p className="text-sm text-muted-foreground">Low Stock</p>
             </div>

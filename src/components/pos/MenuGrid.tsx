@@ -8,9 +8,10 @@ interface MenuItem {
   name: string;
   description: string | null;
   price: number;
-  menu_categories: { name: string } | null;
-  track_inventory?: boolean;
-  inventory_items?: { id: string; current_stock: number; min_stock_level: number; unit: string } | null;
+  category_id?: string | null;
+  menu_categories?: { name: string } | null;
+  track_inventory?: boolean | null;
+  inventory_item_id?: string | null;
 }
 
 interface MenuGridProps {
@@ -27,17 +28,10 @@ const formatPrice = (price: number) => {
 };
 
 export const MenuGrid = ({ items, onAddToCart }: MenuGridProps) => {
+  // Stock tracking is handled by the backend now
   const getStockInfo = (item: MenuItem) => {
-    if (!item.track_inventory || !item.inventory_items) {
-      return { hasStock: true, stock: null, isLow: false };
-    }
-    const { current_stock, min_stock_level } = item.inventory_items;
-    return {
-      hasStock: current_stock > 0,
-      stock: current_stock,
-      isLow: current_stock > 0 && current_stock <= min_stock_level,
-      unit: item.inventory_items.unit,
-    };
+    // For now, assume all items are in stock since the backend handles this
+    return { hasStock: true, stock: null, isLow: false };
   };
 
   return (
