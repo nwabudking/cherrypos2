@@ -1,16 +1,21 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useOrders, useUpdateOrderStatus } from "@/hooks/useOrders";
 import { OrdersHeader } from "@/components/orders/OrdersHeader";
 import { OrdersFilters } from "@/components/orders/OrdersFilters";
 import { OrdersTable } from "@/components/orders/OrdersTable";
 import { OrderDetailsDialog } from "@/components/orders/OrderDetailsDialog";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Order, OrderItem } from "@/lib/api/orders";
 
-export type OrderWithItems = Tables<"orders"> & {
-  order_items: Tables<"order_items">[];
-  payments: Tables<"payments">[];
+export type OrderWithItems = Order & {
+  order_items?: OrderItem[];
+  payments?: Array<{
+    id: string;
+    amount: number;
+    payment_method: string;
+    status: string;
+  }>;
 };
 
 export type OrderStatus = "pending" | "preparing" | "ready" | "completed" | "cancelled";
@@ -18,91 +23,49 @@ export type OrderStatus = "pending" | "preparing" | "ready" | "completed" | "can
 const Orders = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(null);
 
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["orders", statusFilter, orderTypeFilter, searchQuery, dateFilter],
-    queryFn: async () => {
-      let query = supabase
-        .from("orders")
-        .select(`
-          *,
-          order_items (*),
-          payments (*)
-        `)
-        .order("created_at", { ascending: false });
-
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
-      }
-
-      if (orderTypeFilter !== "all") {
-        query = query.eq("order_type", orderTypeFilter);
-      }
-
-      if (searchQuery) {
-        query = query.ilike("order_number", `%${searchQuery}%`);
-      }
-
-      if (dateFilter) {
-        const startOfDay = new Date(dateFilter);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(dateFilter);
-        endOfDay.setHours(23, 59, 59, 999);
-        
-        query = query
-          .gte("created_at", startOfDay.toISOString())
-          .lte("created_at", endOfDay.toISOString());
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as OrderWithItems[];
-    },
+  const { data: orders = [], isLoading } = useOrders({
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    orderType: orderTypeFilter !== "all" ? orderTypeFilter : undefined,
+    search: searchQuery || undefined,
+    startDate: dateFilter
+      ? new Date(dateFilter.setHours(0, 0, 0, 0)).toISOString()
+      : undefined,
+    endDate: dateFilter
+      ? new Date(dateFilter.setHours(23, 59, 59, 999)).toISOString()
+      : undefined,
   });
 
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ orderId, status }: { orderId: string; status: OrderStatus }) => {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("id", orderId);
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({
-        title: "Status Updated",
-        description: "Order status has been updated successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      setSelectedOrder(null);
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update order status.",
-        variant: "destructive",
-      });
-    },
-  });
+  const updateStatusMutation = useUpdateOrderStatus();
 
-  const activeOrders = orders.filter(o => 
+  const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
+    updateStatusMutation.mutate(
+      { id: orderId, status },
+      {
+        onSuccess: () => {
+          setSelectedOrder(null);
+        },
+      }
+    );
+  };
+
+  const activeOrders = orders.filter((o) =>
     ["pending", "preparing", "ready"].includes(o.status)
   );
-  
-  const completedOrders = orders.filter(o => 
+
+  const completedOrders = orders.filter((o) =>
     ["completed", "cancelled"].includes(o.status)
   );
 
   return (
     <div className="space-y-6">
-      <OrdersHeader 
+      <OrdersHeader
         activeCount={activeOrders.length}
         completedCount={completedOrders.length}
       />
@@ -119,23 +82,18 @@ const Orders = () => {
       />
 
       <OrdersTable
-        orders={orders}
+        orders={orders as OrderWithItems[]}
         isLoading={isLoading}
         onViewOrder={setSelectedOrder}
-        onUpdateStatus={(orderId, status) => 
-          updateStatusMutation.mutate({ orderId, status })
-        }
+        onUpdateStatus={(orderId, status) => handleUpdateStatus(orderId, status)}
       />
 
       <OrderDetailsDialog
         order={selectedOrder}
         open={!!selectedOrder}
         onOpenChange={(open) => !open && setSelectedOrder(null)}
-        onUpdateStatus={(status) => 
-          selectedOrder && updateStatusMutation.mutate({ 
-            orderId: selectedOrder.id, 
-            status 
-          })
+        onUpdateStatus={(status) =>
+          selectedOrder && handleUpdateStatus(selectedOrder.id, status)
         }
         isUpdating={updateStatusMutation.isPending}
       />

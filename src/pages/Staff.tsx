@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, AppRole } from "@/contexts/AuthContext";
+import {
+  useStaff,
+  useCreateStaff,
+  useUpdateStaff,
+  useDeleteStaff,
+} from "@/hooks/useStaff";
 import { StaffHeader } from "@/components/staff/StaffHeader";
 import { StaffTable } from "@/components/staff/StaffTable";
 import { AddEditStaffDialog } from "@/components/staff/AddEditStaffDialog";
 import { DeleteStaffDialog } from "@/components/staff/DeleteStaffDialog";
-import type { AppRole } from "@/contexts/AuthContext";
 
 export interface StaffMember {
   id: string;
@@ -21,8 +24,7 @@ export interface StaffMember {
 const Staff = () => {
   const { toast } = useToast();
   const { role: currentUserRole, user } = useAuth();
-  const queryClient = useQueryClient();
-  
+
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -30,116 +32,29 @@ const Staff = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  const { data: staffMembers = [], isLoading } = useQuery({
-    queryKey: ["staff-members"],
-    queryFn: async () => {
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+  const { data: staffMembers = [], isLoading } = useStaff();
+  const createStaffMutation = useCreateStaff();
+  const updateStaffMutation = useUpdateStaff();
+  const deleteStaffMutation = useDeleteStaff();
 
-      if (profilesError) throw profilesError;
+  // Transform staff data to match expected format
+  const transformedStaff: StaffMember[] = staffMembers.map((s) => ({
+    id: s.id,
+    email: s.email,
+    full_name: s.full_name,
+    avatar_url: s.avatar_url,
+    created_at: s.created_at,
+    role: s.role as AppRole | null,
+  }));
 
-      const { data: roles, error: rolesError } = await supabase
-        .from("user_roles")
-        .select("user_id, role");
-
-      if (rolesError) throw rolesError;
-
-      const roleMap = new Map(roles?.map((r) => [r.user_id, r.role]));
-      
-      return profiles?.map((profile) => ({
-        ...profile,
-        role: roleMap.get(profile.id) || null,
-      })) as StaffMember[];
-    },
-  });
-
-  const createStaffMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; fullName: string; role: AppRole }) => {
-      const { data: result, error } = await supabase.functions.invoke("manage-staff", {
-        body: {
-          action: "create",
-          email: data.email,
-          password: data.password,
-          fullName: data.fullName,
-          role: data.role,
-        },
-      });
-
-      if (error) throw error;
-      if (result.error) throw new Error(result.error);
-      return result;
-    },
-    onSuccess: () => {
-      toast({ title: "Staff Created", description: "New staff member added successfully." });
-      queryClient.invalidateQueries({ queryKey: ["staff-members"] });
-      setIsAddEditDialogOpen(false);
-      setSelectedStaff(null);
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const updateStaffMutation = useMutation({
-    mutationFn: async (data: { userId: string; fullName: string; role: AppRole }) => {
-      const { data: result, error } = await supabase.functions.invoke("manage-staff", {
-        body: {
-          action: "update",
-          userId: data.userId,
-          fullName: data.fullName,
-          role: data.role,
-        },
-      });
-
-      if (error) throw error;
-      if (result.error) throw new Error(result.error);
-      return result;
-    },
-    onSuccess: () => {
-      toast({ title: "Staff Updated", description: "Staff member updated successfully." });
-      queryClient.invalidateQueries({ queryKey: ["staff-members"] });
-      setIsAddEditDialogOpen(false);
-      setSelectedStaff(null);
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deleteStaffMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const { data: result, error } = await supabase.functions.invoke("manage-staff", {
-        body: {
-          action: "delete",
-          userId,
-        },
-      });
-
-      if (error) throw error;
-      if (result.error) throw new Error(result.error);
-      return result;
-    },
-    onSuccess: () => {
-      toast({ title: "Staff Deleted", description: "Staff member removed successfully." });
-      queryClient.invalidateQueries({ queryKey: ["staff-members"] });
-      setIsDeleteDialogOpen(false);
-      setSelectedStaff(null);
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const filteredStaff = staffMembers.filter((staff) => {
-    const matchesSearch = 
+  const filteredStaff = transformedStaff.filter((staff) => {
+    const matchesSearch =
       !searchQuery ||
       staff.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       staff.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesRole = roleFilter === "all" || staff.role === roleFilter;
-    
+
     return matchesSearch && matchesRole;
   });
 
@@ -162,19 +77,53 @@ const Staff = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleSaveStaff = (data: { email?: string; password?: string; fullName: string; role: AppRole }) => {
+  const handleSaveStaff = (data: {
+    email?: string;
+    password?: string;
+    fullName: string;
+    role: AppRole;
+  }) => {
     if (isEditing && selectedStaff) {
-      updateStaffMutation.mutate({
-        userId: selectedStaff.id,
-        fullName: data.fullName,
-        role: data.role,
-      });
+      updateStaffMutation.mutate(
+        {
+          id: selectedStaff.id,
+          data: {
+            full_name: data.fullName,
+            role: data.role,
+          },
+        },
+        {
+          onSuccess: () => {
+            setIsAddEditDialogOpen(false);
+            setSelectedStaff(null);
+          },
+        }
+      );
     } else if (data.email && data.password) {
-      createStaffMutation.mutate({
-        email: data.email,
-        password: data.password,
-        fullName: data.fullName,
-        role: data.role,
+      createStaffMutation.mutate(
+        {
+          email: data.email,
+          password: data.password,
+          full_name: data.fullName,
+          role: data.role,
+        },
+        {
+          onSuccess: () => {
+            setIsAddEditDialogOpen(false);
+            setSelectedStaff(null);
+          },
+        }
+      );
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    if (selectedStaff) {
+      deleteStaffMutation.mutate(selectedStaff.id, {
+        onSuccess: () => {
+          setIsDeleteDialogOpen(false);
+          setSelectedStaff(null);
+        },
       });
     }
   };
@@ -182,7 +131,7 @@ const Staff = () => {
   return (
     <div className="space-y-6">
       <StaffHeader
-        staffCount={staffMembers.length}
+        staffCount={transformedStaff.length}
         onAddStaff={handleAddStaff}
         canManage={canManageStaff}
         searchQuery={searchQuery}
@@ -213,7 +162,7 @@ const Staff = () => {
         staff={selectedStaff}
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={() => selectedStaff && deleteStaffMutation.mutate(selectedStaff.id)}
+        onConfirm={handleConfirmDelete}
         isDeleting={deleteStaffMutation.isPending}
       />
     </div>
