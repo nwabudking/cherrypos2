@@ -56,6 +56,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, password: string) => {
     try {
       const response = await authApi.login({ email, password });
+      // Tokens are already stored by authApi.login
+      // Set user state synchronously
       setUser(response.user);
       return { error: null };
     } catch (error) {

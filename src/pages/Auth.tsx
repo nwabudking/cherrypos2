@@ -25,7 +25,7 @@ const Auth = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
@@ -63,14 +63,20 @@ const Auth = () => {
             ? 'Invalid email or password. Please try again.'
             : error.message,
         });
+        setIsLoading(false);
       } else {
         toast({
           title: 'Welcome back!',
           description: 'You have successfully logged in.',
         });
-        navigate('/dashboard');
+        // Navigation handled by useEffect when isAuthenticated changes
       }
-    } finally {
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description: 'An unexpected error occurred. Please try again.',
+      });
       setIsLoading(false);
     }
   };
