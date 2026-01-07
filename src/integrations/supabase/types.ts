@@ -14,6 +14,120 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action_type: string
+          created_at: string | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          new_data: Json | null
+          original_data: Json | null
+          performed_by: string | null
+          reason: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          new_data?: Json | null
+          original_data?: Json | null
+          performed_by?: string | null
+          reason?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          new_data?: Json | null
+          original_data?: Json | null
+          performed_by?: string | null
+          reason?: string | null
+        }
+        Relationships: []
+      }
+      bar_inventory: {
+        Row: {
+          bar_id: string
+          created_at: string | null
+          current_stock: number
+          id: string
+          inventory_item_id: string
+          is_active: boolean | null
+          min_stock_level: number
+          updated_at: string | null
+        }
+        Insert: {
+          bar_id: string
+          created_at?: string | null
+          current_stock?: number
+          id?: string
+          inventory_item_id: string
+          is_active?: boolean | null
+          min_stock_level?: number
+          updated_at?: string | null
+        }
+        Update: {
+          bar_id?: string
+          created_at?: string | null
+          current_stock?: number
+          id?: string
+          inventory_item_id?: string
+          is_active?: boolean | null
+          min_stock_level?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bar_inventory_bar_id_fkey"
+            columns: ["bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bar_inventory_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bars: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       inventory_items: {
         Row: {
           category: string | null
@@ -63,6 +177,70 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_transfers: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          destination_bar_id: string
+          id: string
+          inventory_item_id: string
+          notes: string | null
+          quantity: number
+          source_bar_id: string | null
+          source_type: string
+          status: string
+          transferred_by: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          destination_bar_id: string
+          id?: string
+          inventory_item_id: string
+          notes?: string | null
+          quantity: number
+          source_bar_id?: string | null
+          source_type?: string
+          status?: string
+          transferred_by?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          destination_bar_id?: string
+          id?: string
+          inventory_item_id?: string
+          notes?: string | null
+          quantity?: number
+          source_bar_id?: string | null
+          source_type?: string
+          status?: string
+          transferred_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_transfers_destination_bar_id_fkey"
+            columns: ["destination_bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_transfers_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_transfers_source_bar_id_fkey"
+            columns: ["source_bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
             referencedColumns: ["id"]
           },
         ]
@@ -207,6 +385,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          bar_id: string | null
           created_at: string | null
           created_by: string | null
           discount_amount: number
@@ -223,6 +402,7 @@ export type Database = {
           vat_amount: number
         }
         Insert: {
+          bar_id?: string | null
           created_at?: string | null
           created_by?: string | null
           discount_amount?: number
@@ -239,6 +419,7 @@ export type Database = {
           vat_amount?: number
         }
         Update: {
+          bar_id?: string | null
           created_at?: string | null
           created_by?: string | null
           discount_amount?: number
@@ -254,7 +435,15 @@ export type Database = {
           updated_at?: string | null
           vat_amount?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "orders_bar_id_fkey"
+            columns: ["bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payments: {
         Row: {
@@ -490,6 +679,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_bar_stock: {
+        Args: {
+          p_bar_id: string
+          p_inventory_item_id: string
+          p_quantity: number
+        }
+        Returns: boolean
+      }
+      deduct_bar_inventory: {
+        Args: {
+          p_bar_id: string
+          p_inventory_item_id: string
+          p_quantity: number
+        }
+        Returns: boolean
+      }
       generate_order_number: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
@@ -502,6 +707,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      transfer_store_to_bar: {
+        Args: {
+          p_bar_id: string
+          p_inventory_item_id: string
+          p_notes?: string
+          p_quantity: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role:
@@ -512,6 +726,8 @@ export type Database = {
         | "kitchen_staff"
         | "inventory_officer"
         | "accountant"
+        | "store_user"
+        | "store_admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -647,6 +863,8 @@ export const Constants = {
         "kitchen_staff",
         "inventory_officer",
         "accountant",
+        "store_user",
+        "store_admin",
       ],
     },
   },
