@@ -3,8 +3,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth, AppRole } from "@/contexts/AuthContext";
 import {
   useStaff,
-  useCreateStaff,
   useUpdateStaff,
+  useUpdateStaffRole,
   useDeleteStaff,
 } from "@/hooks/useStaff";
 import { StaffHeader } from "@/components/staff/StaffHeader";
@@ -33,8 +33,8 @@ const Staff = () => {
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
   const { data: staffMembers = [], isLoading } = useStaff();
-  const createStaffMutation = useCreateStaff();
   const updateStaffMutation = useUpdateStaff();
+  const updateRoleMutation = useUpdateStaffRole();
   const deleteStaffMutation = useDeleteStaff();
 
   // Transform staff data to match expected format
@@ -84,16 +84,16 @@ const Staff = () => {
     role: AppRole;
   }) => {
     if (isEditing && selectedStaff) {
+      // Update profile info
       updateStaffMutation.mutate(
         {
           id: selectedStaff.id,
-          data: {
-            full_name: data.fullName,
-            role: data.role,
-          },
+          data: { full_name: data.fullName },
         },
         {
           onSuccess: () => {
+            // Then update role
+            updateRoleMutation.mutate({ id: selectedStaff.id, role: data.role });
             setIsAddEditDialogOpen(false);
             setSelectedStaff(null);
           },

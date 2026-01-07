@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useOrders, useUpdateOrderStatus } from "@/hooks/useOrders";
+import { useOrders, useUpdateOrderStatus, Order, OrderItem } from "@/hooks/useOrders";
 import { OrdersHeader } from "@/components/orders/OrdersHeader";
 import { OrdersFilters } from "@/components/orders/OrdersFilters";
 import { OrdersTable } from "@/components/orders/OrdersTable";
 import { OrderDetailsDialog } from "@/components/orders/OrderDetailsDialog";
-import type { Order, OrderItem } from "@/lib/api/orders";
 
 export type OrderWithItems = Order & {
   order_items?: OrderItem[];
@@ -33,7 +32,6 @@ const Orders = () => {
   const { data: orders = [], isLoading } = useOrders({
     status: statusFilter !== "all" ? statusFilter : undefined,
     orderType: orderTypeFilter !== "all" ? orderTypeFilter : undefined,
-    search: searchQuery || undefined,
     startDate: dateFilter
       ? new Date(dateFilter.setHours(0, 0, 0, 0)).toISOString()
       : undefined,

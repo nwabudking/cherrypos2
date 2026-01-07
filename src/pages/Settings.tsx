@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings, useUpdateSettings } from "@/hooks/useSettings";
-import { authApi } from "@/lib/api/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Settings as SettingsIcon, Building2, Receipt, User, Globe, Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,8 @@ const Settings = () => {
       if (newPassword.length < 6) {
         throw new Error("Password must be at least 6 characters");
       }
-      await authApi.changePassword("", newPassword);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Password changed successfully");

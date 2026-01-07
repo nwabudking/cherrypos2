@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { ordersApi } from "@/lib/api/orders";
+import { supabase } from "@/integrations/supabase/client";
 import { Wine, Clock, CheckCircle2, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -25,15 +25,34 @@ const Bar = () => {
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["bar-orders", filter],
     queryFn: async () => {
-      const statusFilter = filter === "all" ? undefined : filter;
-      return ordersApi.getOrders({ status: statusFilter });
+      let query = supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .order('created_at', { ascending: true });
+      
+      if (filter !== "all") {
+        query = query.eq('status', filter);
+      } else {
+        query = query.in('status', ['pending', 'preparing']);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
     },
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      return ordersApi.updateOrderStatus(orderId, status);
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', orderId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bar-orders"] });

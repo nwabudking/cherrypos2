@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -15,6 +15,8 @@ import {
   useAddStock,
   useRemoveStock,
   useAdjustStock,
+  InventoryItem as HookInventoryItem,
+  Supplier as HookSupplier,
 } from "@/hooks/useInventory";
 import { InventoryHeader } from "@/components/inventory/InventoryHeader";
 import { InventoryTable } from "@/components/inventory/InventoryTable";
@@ -27,7 +29,6 @@ import { SuppliersTable } from "@/components/inventory/SuppliersTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Plus, Truck } from "lucide-react";
-import type { InventoryItem as ApiInventoryItem } from "@/lib/api/inventory";
 
 export interface InventoryItem {
   id: string;

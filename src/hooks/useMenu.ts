@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { menuApi, MenuCategory, MenuItem } from '@/lib/api/menu';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
+
+export type MenuCategory = Tables<'menu_categories'>;
+export type MenuItem = Tables<'menu_items'>;
 
 // Query keys
 export const menuKeys = {
@@ -17,14 +21,29 @@ export const menuKeys = {
 export function useMenuCategories() {
   return useQuery({
     queryKey: menuKeys.categories(),
-    queryFn: menuApi.getCategories,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('menu_categories')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
 export function useActiveMenuCategories() {
   return useQuery({
     queryKey: menuKeys.activeCategories(),
-    queryFn: menuApi.getActiveCategories,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('menu_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
@@ -32,7 +51,15 @@ export function useCreateCategory() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data: Partial<MenuCategory>) => menuApi.createCategory(data),
+    mutationFn: async (data: TablesInsert<'menu_categories'>) => {
+      const { data: result, error } = await supabase
+        .from('menu_categories')
+        .insert(data)
+        .select()
+        .single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.categories() });
       toast.success('Category created successfully');
@@ -47,8 +74,16 @@ export function useUpdateCategory() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<MenuCategory> }) => 
-      menuApi.updateCategory(id, data),
+    mutationFn: async ({ id, data }: { id: string; data: TablesUpdate<'menu_categories'> }) => {
+      const { data: result, error } = await supabase
+        .from('menu_categories')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.categories() });
       toast.success('Category updated successfully');
@@ -63,7 +98,13 @@ export function useDeleteCategory() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id: string) => menuApi.deleteCategory(id),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('menu_categories')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.categories() });
       toast.success('Category deleted successfully');
@@ -78,7 +119,20 @@ export function useDeleteCategory() {
 export function useMenuItems(categoryId?: string) {
   return useQuery({
     queryKey: categoryId ? menuKeys.itemsByCategory(categoryId) : menuKeys.items(),
-    queryFn: () => menuApi.getMenuItems(categoryId),
+    queryFn: async () => {
+      let query = supabase
+        .from('menu_items')
+        .select('*, menu_categories(name)')
+        .order('name');
+      
+      if (categoryId) {
+        query = query.eq('category_id', categoryId);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
@@ -87,14 +141,37 @@ export function useActiveMenuItems(categoryId?: string) {
     queryKey: categoryId 
       ? [...menuKeys.activeItems(), 'category', categoryId] 
       : menuKeys.activeItems(),
-    queryFn: () => menuApi.getActiveMenuItems(categoryId),
+    queryFn: async () => {
+      let query = supabase
+        .from('menu_items')
+        .select('*, menu_categories(name)')
+        .eq('is_active', true)
+        .eq('is_available', true)
+        .order('name');
+      
+      if (categoryId) {
+        query = query.eq('category_id', categoryId);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
 export function useMenuItem(id: string) {
   return useQuery({
     queryKey: menuKeys.item(id),
-    queryFn: () => menuApi.getMenuItem(id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*, menu_categories(name)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
     enabled: !!id,
   });
 }
@@ -103,7 +180,15 @@ export function useCreateMenuItem() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data: Partial<MenuItem>) => menuApi.createMenuItem(data),
+    mutationFn: async (data: TablesInsert<'menu_items'>) => {
+      const { data: result, error } = await supabase
+        .from('menu_items')
+        .insert(data)
+        .select()
+        .single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.items() });
       toast.success('Menu item created successfully');
@@ -118,8 +203,16 @@ export function useUpdateMenuItem() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<MenuItem> }) => 
-      menuApi.updateMenuItem(id, data),
+    mutationFn: async ({ id, data }: { id: string; data: TablesUpdate<'menu_items'> }) => {
+      const { data: result, error } = await supabase
+        .from('menu_items')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.items() });
       toast.success('Menu item updated successfully');
@@ -134,7 +227,13 @@ export function useDeleteMenuItem() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id: string) => menuApi.deleteMenuItem(id),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuKeys.items() });
       toast.success('Menu item deleted successfully');

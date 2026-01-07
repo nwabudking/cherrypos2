@@ -5,8 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { ordersApi, Order } from "@/lib/api/orders";
-import { menuApi } from "@/lib/api/menu";
+import { supabase } from "@/integrations/supabase/client";
 import { ChefHat, Clock, CheckCircle2, RefreshCw, Flame } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -26,17 +25,35 @@ const Kitchen = () => {
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["kitchen-orders", filter],
     queryFn: async () => {
-      const statusFilter = filter === "all" ? undefined : filter;
-      const allOrders = await ordersApi.getOrders({ status: statusFilter });
-      // Filter out bar-only orders for kitchen
-      return allOrders.filter((o) => o.order_type !== "bar_only");
+      let query = supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .neq('order_type', 'bar_only')
+        .order('created_at', { ascending: true });
+      
+      if (filter !== "all") {
+        query = query.eq('status', filter);
+      } else {
+        query = query.in('status', ['pending', 'preparing']);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
     },
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      return ordersApi.updateOrderStatus(orderId, status);
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', orderId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["kitchen-orders"] });

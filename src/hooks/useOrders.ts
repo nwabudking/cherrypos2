@@ -1,6 +1,42 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ordersApi, Order, CreateOrderData, OrderFilters } from '@/lib/api/orders';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+
+export type Order = Tables<'orders'>;
+export type OrderItem = Tables<'order_items'>;
+export type Payment = Tables<'payments'>;
+
+export interface OrderFilters {
+  status?: string;
+  orderType?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CreateOrderData {
+  order_type: string;
+  table_number?: string | null;
+  notes?: string | null;
+  subtotal: number;
+  vat_amount: number;
+  service_charge: number;
+  discount_amount: number;
+  total_amount: number;
+  items: Array<{
+    menu_item_id: string;
+    item_name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    notes?: string | null;
+  }>;
+  payment?: {
+    amount: number;
+    payment_method: string;
+    reference?: string | null;
+  };
+}
 
 // Query keys
 export const ordersKeys = {
@@ -18,14 +54,44 @@ export const ordersKeys = {
 export function useOrders(filters?: OrderFilters) {
   return useQuery({
     queryKey: ordersKeys.list(filters),
-    queryFn: () => ordersApi.getOrders(filters),
+    queryFn: async () => {
+      let query = supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .order('created_at', { ascending: false });
+      
+      if (filters?.status) {
+        query = query.eq('status', filters.status);
+      }
+      if (filters?.orderType) {
+        query = query.eq('order_type', filters.orderType);
+      }
+      if (filters?.startDate) {
+        query = query.gte('created_at', filters.startDate);
+      }
+      if (filters?.endDate) {
+        query = query.lte('created_at', filters.endDate);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
 export function useOrder(id: string) {
   return useQuery({
     queryKey: ordersKeys.detail(id),
-    queryFn: () => ordersApi.getOrder(id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*), payments(*)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
     enabled: !!id,
   });
 }
@@ -33,7 +99,14 @@ export function useOrder(id: string) {
 export function useOrderItems(orderId: string) {
   return useQuery({
     queryKey: ordersKeys.items(orderId),
-    queryFn: () => ordersApi.getOrderItems(orderId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', orderId);
+      if (error) throw error;
+      return data;
+    },
     enabled: !!orderId,
   });
 }
@@ -41,7 +114,14 @@ export function useOrderItems(orderId: string) {
 export function useOrderPayments(orderId: string) {
   return useQuery({
     queryKey: ordersKeys.payments(orderId),
-    queryFn: () => ordersApi.getOrderPayments(orderId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('order_id', orderId);
+      if (error) throw error;
+      return data;
+    },
     enabled: !!orderId,
   });
 }
@@ -49,23 +129,52 @@ export function useOrderPayments(orderId: string) {
 export function useKitchenQueue() {
   return useQuery({
     queryKey: ordersKeys.kitchenQueue(),
-    queryFn: ordersApi.getKitchenQueue,
-    refetchInterval: 10000, // Refetch every 10 seconds
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .in('status', ['pending', 'preparing'])
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 10000,
   });
 }
 
 export function useBarQueue() {
   return useQuery({
     queryKey: ordersKeys.barQueue(),
-    queryFn: ordersApi.getBarQueue,
-    refetchInterval: 10000, // Refetch every 10 seconds
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .in('status', ['pending', 'preparing'])
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 10000,
   });
 }
 
 export function useDailySummary(date?: string) {
   return useQuery({
     queryKey: ordersKeys.dailySummary(date),
-    queryFn: () => ordersApi.getDailySummary(date),
+    queryFn: async () => {
+      const targetDate = date || new Date().toISOString().split('T')[0];
+      const startOfDay = `${targetDate}T00:00:00`;
+      const endOfDay = `${targetDate}T23:59:59`;
+      
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, payments(*)')
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+      
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
@@ -73,7 +182,77 @@ export function useCreateOrder() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data: CreateOrderData) => ordersApi.createOrder(data),
+    mutationFn: async (data: CreateOrderData) => {
+      // Generate order number
+      const { data: orderNumber, error: orderNumError } = await supabase
+        .rpc('generate_order_number');
+      if (orderNumError) throw orderNumError;
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Create order
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          order_number: orderNumber,
+          order_type: data.order_type,
+          table_number: data.table_number,
+          notes: data.notes,
+          subtotal: data.subtotal,
+          vat_amount: data.vat_amount,
+          service_charge: data.service_charge,
+          discount_amount: data.discount_amount,
+          total_amount: data.total_amount,
+          status: 'pending',
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+      
+      if (orderError) throw orderError;
+
+      // Insert order items
+      const orderItems = data.items.map(item => ({
+        order_id: order.id,
+        menu_item_id: item.menu_item_id,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        notes: item.notes,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+      
+      if (itemsError) throw itemsError;
+
+      // Add payment if provided
+      if (data.payment) {
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .insert({
+            order_id: order.id,
+            amount: data.payment.amount,
+            payment_method: data.payment.payment_method,
+            reference: data.payment.reference,
+            status: 'completed',
+            created_by: user?.id,
+          });
+        
+        if (paymentError) throw paymentError;
+
+        // Update order status to completed
+        await supabase
+          .from('orders')
+          .update({ status: 'completed' })
+          .eq('id', order.id);
+      }
+
+      return order;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ordersKeys.all });
       toast.success('Order created successfully');
@@ -88,8 +267,16 @@ export function useUpdateOrderStatus() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => 
-      ordersApi.updateOrderStatus(id, status),
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ordersKeys.all });
       toast.success('Order status updated');
@@ -104,10 +291,28 @@ export function useAddPayment() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ orderId, payment }: { 
+    mutationFn: async ({ orderId, payment }: { 
       orderId: string; 
       payment: { amount: number; payment_method: string; reference?: string | null; status?: string } 
-    }) => ordersApi.addPayment(orderId, { ...payment, reference: payment.reference ?? null, status: payment.status ?? 'completed' }),
+    }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { data, error } = await supabase
+        .from('payments')
+        .insert({
+          order_id: orderId,
+          amount: payment.amount,
+          payment_method: payment.payment_method,
+          reference: payment.reference ?? null,
+          status: payment.status ?? 'completed',
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
     onSuccess: (_, { orderId }) => {
       queryClient.invalidateQueries({ queryKey: ordersKeys.payments(orderId) });
       queryClient.invalidateQueries({ queryKey: ordersKeys.detail(orderId) });

@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useActiveMenuCategories, useActiveMenuItems } from "@/hooks/useMenu";
-import { useCreateOrder } from "@/hooks/useOrders";
-import { ordersApi, CreateOrderData } from "@/lib/api/orders";
+import { useCreateOrder, CreateOrderData } from "@/hooks/useOrders";
 import { POSHeader } from "@/components/pos/POSHeader";
 import { CategoryTabs } from "@/components/pos/CategoryTabs";
 import { MenuGrid } from "@/components/pos/MenuGrid";
 import { CartPanel } from "@/components/pos/CartPanel";
 import { CheckoutDialog } from "@/components/pos/CheckoutDialog";
+import type { MenuCategory } from "@/hooks/useMenu";
 
 export interface CartItem {
   id: string;
@@ -46,27 +46,48 @@ const POS = () => {
   const { data: categories = [] } = useActiveMenuCategories();
   const { data: menuItems = [] } = useActiveMenuItems(selectedCategory || undefined);
 
-  const createOrderMutation = useMutation({
-    mutationFn: async (paymentMethod: string) => {
-      const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      
-      const orderData: CreateOrderData = {
-        order_type: orderType,
-        table_number: orderType === "dine_in" ? tableNumber : undefined,
-        items: cart.map((item) => ({
-          menu_item_id: item.menuItemId,
-          item_name: item.name,
-          quantity: item.quantity,
-          unit_price: item.price,
-          notes: item.notes,
-        })),
-        payment: {
-          payment_method: paymentMethod,
-          amount: subtotal,
-        },
-      };
+  const createOrderMutation = useCreateOrder();
 
-      return ordersApi.createOrder(orderData);
+  const handleCheckout = async (paymentMethod: string) => {
+    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    
+    const orderData: CreateOrderData = {
+      order_type: orderType,
+      table_number: orderType === "dine_in" ? tableNumber : null,
+      notes: null,
+      subtotal,
+      vat_amount: 0,
+      service_charge: 0,
+      discount_amount: 0,
+      total_amount: subtotal,
+      items: cart.map((item) => ({
+        menu_item_id: item.menuItemId,
+        item_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total_price: item.price * item.quantity,
+        notes: item.notes || null,
+      })),
+      payment: {
+        payment_method: paymentMethod,
+        amount: subtotal,
+      },
+    };
+
+    createOrderMutation.mutate(orderData, {
+      onSuccess: (order) => {
+        toast({
+          title: "Order Created!",
+          description: `Order ${order.order_number} has been placed successfully.`,
+        });
+        setCheckoutCart([...cart]);
+        setCompletedOrder(order);
+        setCart([]);
+        setTableNumber("");
+        setIsCheckoutOpen(false);
+      },
+    });
+  };
     },
     onSuccess: (order) => {
       toast({

@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LowStockDialog } from "@/components/dashboard/LowStockDialog";
-import { ordersApi } from "@/lib/api/orders";
-import { inventoryApi } from "@/lib/api/inventory";
-import { menuApi } from "@/lib/api/menu";
+import { supabase } from "@/integrations/supabase/client";
 import {
   DollarSign,
   ShoppingCart,
@@ -85,24 +83,41 @@ const Dashboard = () => {
   const { data: todayOrders = [], isLoading: ordersLoading } = useQuery({
     queryKey: ["dashboard-orders", format(today, "yyyy-MM-dd")],
     queryFn: async () => {
-      const orders = await ordersApi.getOrders({
-        startDate: todayStart.toISOString(),
-        endDate: todayEnd.toISOString(),
-      });
-      return orders;
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .gte('created_at', todayStart.toISOString())
+        .lte('created_at', todayEnd.toISOString());
+      if (error) throw error;
+      return data || [];
     },
   });
 
   // Fetch low stock items
   const { data: lowStockItems = [], isLoading: inventoryLoading } = useQuery({
     queryKey: ["dashboard-low-stock"],
-    queryFn: () => inventoryApi.getLowStockItems(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .select('*')
+        .eq('is_active', true);
+      if (error) throw error;
+      return (data || []).filter(item => item.current_stock <= item.min_stock_level);
+    },
   });
 
   // Fetch menu items count
   const { data: menuItems = [] } = useQuery({
     queryKey: ["dashboard-menu-count"],
-    queryFn: () => menuApi.getActiveMenuItems(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('is_active', true)
+        .eq('is_available', true);
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const menuItemsCount = menuItems.length;
