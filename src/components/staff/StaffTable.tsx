@@ -17,17 +17,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Edit2, Trash2 } from "lucide-react";
+import { MoreHorizontal, Edit2, Trash2, Store } from "lucide-react";
 import { format } from "date-fns";
 import type { StaffMember } from "@/pages/Staff";
 
 interface StaffTableProps {
-  staff: StaffMember[];
+  staff: (StaffMember & { assignedBar?: string | null })[];
   isLoading: boolean;
   onEdit: (staff: StaffMember) => void;
   onDelete: (staff: StaffMember) => void;
   canManage: boolean;
   currentUserId?: string;
+  onAssignBar?: (staff: StaffMember) => void;
 }
 
 const roleConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -38,6 +39,8 @@ const roleConfig: Record<string, { label: string; variant: "default" | "secondar
   kitchen_staff: { label: "Kitchen Staff", variant: "outline" },
   inventory_officer: { label: "Inventory Officer", variant: "secondary" },
   accountant: { label: "Accountant", variant: "secondary" },
+  store_admin: { label: "Store Admin", variant: "secondary" },
+  store_user: { label: "Store User", variant: "outline" },
 };
 
 export const StaffTable = ({
@@ -47,6 +50,7 @@ export const StaffTable = ({
   onDelete,
   canManage,
   currentUserId,
+  onAssignBar,
 }: StaffTableProps) => {
   if (isLoading) {
     return (
@@ -88,6 +92,7 @@ export const StaffTable = ({
             <TableHead>Staff Member</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead>Assigned Bar</TableHead>
             <TableHead>Joined</TableHead>
             {canManage && <TableHead className="text-right">Actions</TableHead>}
           </TableRow>
@@ -96,6 +101,7 @@ export const StaffTable = ({
           {staff.map((member) => {
             const role = member.role ? roleConfig[member.role] : null;
             const isCurrentUser = member.id === currentUserId;
+            const showAssignBar = member.role === "cashier" || member.role === "bar_staff";
             
             return (
               <TableRow key={member.id}>
@@ -127,6 +133,18 @@ export const StaffTable = ({
                     <Badge variant="outline">No Role</Badge>
                   )}
                 </TableCell>
+                <TableCell>
+                  {member.assignedBar ? (
+                    <Badge className="bg-primary/10 text-primary border-primary/20">
+                      <Store className="h-3 w-3 mr-1" />
+                      {member.assignedBar}
+                    </Badge>
+                  ) : showAssignBar ? (
+                    <span className="text-muted-foreground text-sm">Not assigned</span>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
                 <TableCell className="text-muted-foreground">
                   {member.created_at
                     ? format(new Date(member.created_at), "MMM d, yyyy")
@@ -145,6 +163,12 @@ export const StaffTable = ({
                           <Edit2 className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
+                        {onAssignBar && (
+                          <DropdownMenuItem onClick={() => onAssignBar(member)}>
+                            <Store className="h-4 w-4 mr-2" />
+                            Assign to Bar
+                          </DropdownMenuItem>
+                        )}
                         {!isCurrentUser && (
                           <DropdownMenuItem
                             className="text-destructive"

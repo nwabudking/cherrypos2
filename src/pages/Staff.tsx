@@ -8,10 +8,15 @@ import {
   useDeleteStaff,
   useCreateStaff,
 } from "@/hooks/useStaff";
+import { useCashierAssignments } from "@/hooks/useCashierAssignment";
 import { StaffHeader } from "@/components/staff/StaffHeader";
 import { StaffTable } from "@/components/staff/StaffTable";
 import { AddEditStaffDialog } from "@/components/staff/AddEditStaffDialog";
 import { DeleteStaffDialog } from "@/components/staff/DeleteStaffDialog";
+import { CashierAssignmentDialog } from "@/components/staff/CashierAssignmentDialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Store } from "lucide-react";
 
 export interface StaffMember {
   id: string;
@@ -29,11 +34,13 @@ const Staff = () => {
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isAssignmentDialogOpen, setIsAssignmentDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
   const { data: staffMembers = [], isLoading } = useStaff();
+  const { data: assignments = [] } = useCashierAssignments();
   const createStaffMutation = useCreateStaff();
   const updateStaffMutation = useUpdateStaff();
   const updateRoleMutation = useUpdateStaffRole();
@@ -49,7 +56,16 @@ const Staff = () => {
     role: s.role as AppRole | null,
   }));
 
-  const filteredStaff = transformedStaff.filter((staff) => {
+  // Add bar assignment info
+  const staffWithAssignments = transformedStaff.map((staff) => {
+    const assignment = assignments.find((a) => a.user_id === staff.id);
+    return {
+      ...staff,
+      assignedBar: assignment?.bar?.name || null,
+    };
+  });
+
+  const filteredStaff = staffWithAssignments.filter((staff) => {
     const matchesSearch =
       !searchQuery ||
       staff.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -77,6 +93,11 @@ const Staff = () => {
   const handleDeleteStaff = (staff: StaffMember) => {
     setSelectedStaff(staff);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleAssignBar = (staff: StaffMember) => {
+    setSelectedStaff(staff);
+    setIsAssignmentDialogOpen(true);
   };
 
   const handleSaveStaff = (data: {
@@ -149,6 +170,7 @@ const Staff = () => {
         onDelete={handleDeleteStaff}
         canManage={canManageStaff}
         currentUserId={user?.id}
+        onAssignBar={handleAssignBar}
       />
 
       <AddEditStaffDialog
@@ -166,6 +188,12 @@ const Staff = () => {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleConfirmDelete}
         isDeleting={deleteStaffMutation.isPending}
+      />
+
+      <CashierAssignmentDialog
+        open={isAssignmentDialogOpen}
+        onOpenChange={setIsAssignmentDialogOpen}
+        staffMember={selectedStaff}
       />
     </div>
   );

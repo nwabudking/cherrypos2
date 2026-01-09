@@ -1,19 +1,29 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { ReportsHeader } from "@/components/reports/ReportsHeader";
 import { SalesMetrics } from "@/components/reports/SalesMetrics";
 import { RevenueChart } from "@/components/reports/RevenueChart";
 import { TopItemsChart } from "@/components/reports/TopItemsChart";
 import { SalesByType } from "@/components/reports/SalesByType";
+import { ProfitMetrics } from "@/components/reports/ProfitMetrics";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FileDown, FileSpreadsheet } from "lucide-react";
 import { startOfDay, endOfDay, subDays, format } from "date-fns";
+import { exportToPDF, exportToExcel, generateReportHTML } from "@/lib/exportUtils";
 
 export type DateRange = "today" | "7days" | "30days" | "custom";
 
 const Reports = () => {
+  const { role } = useAuth();
   const [dateRange, setDateRange] = useState<DateRange>("7days");
   const [customStart, setCustomStart] = useState<Date | undefined>();
   const [customEnd, setCustomEnd] = useState<Date | undefined>();
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  const isSuperAdmin = role === "super_admin";
 
   const getDateFilter = () => {
     const now = new Date();
@@ -41,7 +51,7 @@ const Reports = () => {
         .from("orders")
         .select(`
           *,
-          order_items (*),
+          order_items (*, menu_items(cost_price)),
           payments (*)
         `)
         .gte("created_at", start.toISOString())
@@ -62,6 +72,17 @@ const Reports = () => {
     (sum, o) => sum + (o.order_items?.reduce((s, i) => s + i.quantity, 0) || 0),
     0
   );
+
+  // Calculate profit metrics (for super admin)
+  const totalCostPrice = orders.reduce((sum, order) => {
+    return sum + (order.order_items?.reduce((itemSum, item) => {
+      const costPrice = (item as any).menu_items?.cost_price || 0;
+      return itemSum + (Number(costPrice) * item.quantity);
+    }, 0) || 0);
+  }, 0);
+  
+  const profit = totalRevenue - totalCostPrice;
+  const profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
 
   // Revenue by day
   const revenueByDay = orders.reduce((acc, order) => {
@@ -109,16 +130,110 @@ const Reports = () => {
     return acc;
   }, {} as Record<string, number>);
 
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  // Export handlers
+  const handleExportPDF = () => {
+    const reportData = {
+      summary: [
+        { label: "Total Revenue", value: formatCurrency(totalRevenue) },
+        { label: "Total Orders", value: totalOrders },
+        { label: "Average Order", value: formatCurrency(averageOrderValue) },
+        { label: "Items Sold", value: totalItems },
+        ...(isSuperAdmin ? [
+          { label: "Total Cost", value: formatCurrency(totalCostPrice) },
+          { label: "Profit", value: formatCurrency(profit) },
+          { label: "Margin", value: `${profitMargin.toFixed(1)}%` },
+        ] : []),
+      ],
+      tableData: orders.map(o => ({
+        order_number: o.order_number,
+        date: format(new Date(o.created_at!), "MMM dd, yyyy HH:mm"),
+        type: o.order_type,
+        total: formatCurrency(Number(o.total_amount)),
+        status: o.status,
+      })),
+      columns: [
+        { key: "order_number", header: "Order #" },
+        { key: "date", header: "Date" },
+        { key: "type", header: "Type" },
+        { key: "total", header: "Total" },
+        { key: "status", header: "Status" },
+      ],
+    };
+
+    const content = generateReportHTML(reportData);
+    exportToPDF(`Sales Report - ${format(start, "MMM dd")} to ${format(end, "MMM dd, yyyy")}`, content);
+  };
+
+  const handleExportExcel = () => {
+    const data = orders.map(o => ({
+      order_number: o.order_number,
+      date: format(new Date(o.created_at!), "yyyy-MM-dd HH:mm"),
+      type: o.order_type,
+      subtotal: o.subtotal,
+      vat: o.vat_amount,
+      service_charge: o.service_charge,
+      discount: o.discount_amount,
+      total: o.total_amount,
+      status: o.status,
+      payment_method: o.payments?.[0]?.payment_method || "",
+    }));
+
+    exportToExcel(`sales_report_${format(start, "yyyyMMdd")}_${format(end, "yyyyMMdd")}`, data, [
+      { key: "order_number", header: "Order Number" },
+      { key: "date", header: "Date" },
+      { key: "type", header: "Order Type" },
+      { key: "subtotal", header: "Subtotal" },
+      { key: "vat", header: "VAT" },
+      { key: "service_charge", header: "Service Charge" },
+      { key: "discount", header: "Discount" },
+      { key: "total", header: "Total" },
+      { key: "status", header: "Status" },
+      { key: "payment_method", header: "Payment Method" },
+    ]);
+  };
+
   return (
-    <div className="space-y-6">
-      <ReportsHeader
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        customStart={customStart}
-        setCustomStart={setCustomStart}
-        customEnd={customEnd}
-        setCustomEnd={setCustomEnd}
-      />
+    <div className="space-y-6" ref={reportRef}>
+      <div className="flex flex-col sm:flex-row justify-between gap-4">
+        <ReportsHeader
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          customStart={customStart}
+          setCustomStart={setCustomStart}
+          customEnd={customEnd}
+          setCustomEnd={setCustomEnd}
+        />
+        
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportPDF}>
+            <FileDown className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
+        </div>
+      </div>
+
+      {/* Profit Metrics (Super Admin Only) */}
+      {isSuperAdmin && (
+        <ProfitMetrics
+          totalCostPrice={totalCostPrice}
+          totalSellingPrice={totalRevenue}
+          profit={profit}
+          profitMargin={profitMargin}
+          isLoading={isLoading}
+        />
+      )}
 
       <SalesMetrics
         totalRevenue={totalRevenue}

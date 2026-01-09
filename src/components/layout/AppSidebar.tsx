@@ -46,7 +46,6 @@ const mainNavItems: NavItem[] = [
   { title: 'Orders', url: '/orders', icon: ClipboardList },
   { title: 'Order History', url: '/order-history', icon: History, roles: ['super_admin', 'manager', 'cashier'] },
   { title: 'EOD Report', url: '/eod-report', icon: FileText, roles: ['super_admin', 'manager', 'cashier'] },
-  { title: 'Tables', url: '/tables', icon: Grid3X3, roles: ['super_admin', 'manager', 'cashier'] },
 ];
 
 const operationsNavItems: NavItem[] = [

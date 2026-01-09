@@ -128,6 +128,44 @@ export type Database = {
         }
         Relationships: []
       }
+      cashier_bar_assignments: {
+        Row: {
+          assigned_by: string | null
+          bar_id: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          bar_id: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          assigned_by?: string | null
+          bar_id?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cashier_bar_assignments_bar_id_fkey"
+            columns: ["bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           category: string | null
@@ -138,6 +176,7 @@ export type Database = {
           is_active: boolean | null
           min_stock_level: number
           name: string
+          selling_price: number | null
           supplier: string | null
           supplier_id: string | null
           unit: string
@@ -152,6 +191,7 @@ export type Database = {
           is_active?: boolean | null
           min_stock_level?: number
           name: string
+          selling_price?: number | null
           supplier?: string | null
           supplier_id?: string | null
           unit?: string
@@ -166,6 +206,7 @@ export type Database = {
           is_active?: boolean | null
           min_stock_level?: number
           name?: string
+          selling_price?: number | null
           supplier?: string | null
           supplier_id?: string | null
           unit?: string

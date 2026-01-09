@@ -46,6 +46,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -64,6 +74,8 @@ import {
   PackagePlus,
   UtensilsCrossed,
   FolderPlus,
+  FileSpreadsheet,
+  Store,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { InventoryItemDialog } from "@/components/inventory/InventoryItemDialog";
@@ -71,6 +83,9 @@ import { StockMovementDialog } from "@/components/inventory/StockMovementDialog"
 import { AddCategoryDialog } from "@/components/inventory/AddCategoryDialog";
 import { MenuItemsTab } from "@/components/menu/MenuItemsTab";
 import { CategoriesTab } from "@/components/menu/CategoriesTab";
+import { StockHistoryTab } from "@/components/store/StockHistoryTab";
+import { BarInventoryLevelsTab } from "@/components/store/BarInventoryLevelsTab";
+import { BulkImportDialog } from "@/components/store/BulkImportDialog";
 
 type InventoryItem = {
   id: string;
@@ -80,6 +95,7 @@ type InventoryItem = {
   current_stock: number;
   min_stock_level: number;
   cost_per_unit: number | null;
+  selling_price?: number | null;
   supplier: string | null;
   supplier_id: string | null;
   is_active: boolean | null;
@@ -89,7 +105,7 @@ type InventoryItem = {
 
 type MovementType = "in" | "out" | "adjustment";
 
-const Store = () => {
+const StorePage = () => {
   const { toast } = useToast();
   const { role } = useAuth();
   const queryClient = useQueryClient();
@@ -117,6 +133,13 @@ const Store = () => {
   // Category dialog state
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
+  
+  // Bulk import dialog
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  
+  // Delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
 
   // Data hooks
   const { data: items = [], isLoading } = useInventoryItems();
@@ -200,8 +223,20 @@ const Store = () => {
     setIsItemDialogOpen(true);
   };
 
-  const handleDeleteItem = (id: string) => {
-    deleteItemMutation.mutate(id);
+  const handleDeleteClick = (item: InventoryItem) => {
+    setItemToDelete(item);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (itemToDelete) {
+      deleteItemMutation.mutate(itemToDelete.id, {
+        onSuccess: () => {
+          setDeleteDialogOpen(false);
+          setItemToDelete(null);
+        },
+      });
+    }
   };
 
   const handleSaveItem = (data: Partial<InventoryItem> & { id?: string }) => {
@@ -280,8 +315,8 @@ const Store = () => {
     toast({ title: "Category Added", description: `"${category}" is now available for items.` });
   };
 
-  const formatPrice = (price: number | null) => {
-    if (price === null) return "-";
+  const formatPrice = (price: number | null | undefined) => {
+    if (price === null || price === undefined) return "-";
     return new Intl.NumberFormat("en-NG", {
       style: "currency",
       currency: "NGN",
@@ -360,11 +395,13 @@ const Store = () => {
       </div>
 
       <Tabs defaultValue="inventory" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="inventory">Store Inventory</TabsTrigger>
           <TabsTrigger value="menu">Menu Items</TabsTrigger>
           <TabsTrigger value="categories">Menu Categories</TabsTrigger>
           <TabsTrigger value="transfers">Transfer History</TabsTrigger>
+          <TabsTrigger value="stock-history">Stock History</TabsTrigger>
+          <TabsTrigger value="bar-levels">Bar Inventory Levels</TabsTrigger>
         </TabsList>
 
         <TabsContent value="inventory" className="space-y-4">
@@ -402,6 +439,10 @@ const Store = () => {
             
             {canManage && (
               <div className="flex gap-2 ml-auto">
+                <Button variant="outline" onClick={() => setIsBulkImportOpen(true)}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Bulk Import
+                </Button>
                 <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)}>
                   <FolderPlus className="h-4 w-4 mr-2" />
                   Add Category
@@ -424,7 +465,8 @@ const Store = () => {
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Min Level</TableHead>
-                    <TableHead className="text-right">Unit Cost</TableHead>
+                    <TableHead className="text-right">Cost Price</TableHead>
+                    <TableHead className="text-right">Selling Price</TableHead>
                     <TableHead>Status</TableHead>
                     {canManage && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
@@ -447,6 +489,9 @@ const Store = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           {formatPrice(item.cost_per_unit)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatPrice((item as any).selling_price)}
                         </TableCell>
                         <TableCell>
                           {isOutOfStock ? (
@@ -488,7 +533,7 @@ const Store = () => {
                                   Edit
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
-                                  onClick={() => handleDeleteItem(item.id)}
+                                  onClick={() => handleDeleteClick(item)}
                                   className="text-destructive"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
@@ -503,7 +548,7 @@ const Store = () => {
                   })}
                   {filteredItems.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                         No items found
                       </TableCell>
                     </TableRow>
@@ -595,6 +640,14 @@ const Store = () => {
             </ScrollArea>
           </Card>
         </TabsContent>
+
+        <TabsContent value="stock-history">
+          <StockHistoryTab />
+        </TabsContent>
+
+        <TabsContent value="bar-levels">
+          <BarInventoryLevelsTab />
+        </TabsContent>
       </Tabs>
 
       {/* Transfer Dialog */}
@@ -661,6 +714,27 @@ const Store = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Inventory Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{itemToDelete?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteItemMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Inventory Item Dialog */}
       <InventoryItemDialog
         item={selectedItem}
@@ -692,8 +766,14 @@ const Store = () => {
         existingCategories={categories}
         onAddCategory={handleAddCategory}
       />
+
+      {/* Bulk Import Dialog */}
+      <BulkImportDialog
+        open={isBulkImportOpen}
+        onOpenChange={setIsBulkImportOpen}
+      />
     </div>
   );
 };
 
-export default Store;
+export default StorePage;
