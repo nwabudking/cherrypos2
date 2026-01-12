@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useBars } from "@/hooks/useBars";
-import { ChefHat, Clock, CheckCircle2, RefreshCw, Flame, Store, Volume2 } from "lucide-react";
+import { ChefHat, Clock, CheckCircle2, RefreshCw, Flame, Store, Volume2, VolumeX, Bell } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const orderTypeLabels: Record<string, string> = {
@@ -17,11 +17,16 @@ const orderTypeLabels: Record<string, string> = {
   bar_only: "Bar Only",
 };
 
+// Base64 encoded notification sound
+const NOTIFICATION_SOUND = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleC8EF3GVyvPr2JdhSjxAaYy9s6VhVkdXj8bg2L9tdEQ5RWV+rsvW24NnRDc/XXqivcfWm3JdSUM9RVWBqMbf2ZVnTEE9RVt+rcnf25RoTEE9RVuAs8rg25NoTEI9Rlt+rcnf25NoTEI9RVt+rcnf25NoTEI9RVt/rcnf25NoTEI9RVt/rcnf25NoTEE9RVt/rcnf';
+
 const Kitchen = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"pending" | "preparing" | "all">("pending");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [newOrderAlert, setNewOrderAlert] = useState(false);
+  const previousOrderCountRef = useRef<number>(0);
 
   const { data: bars = [] } = useBars();
 
@@ -45,8 +50,67 @@ const Kitchen = () => {
       if (error) throw error;
       return data || [];
     },
-    refetchInterval: 5000, // Refresh every 5 seconds for faster updates
+    refetchInterval: 3000, // Refresh every 3 seconds for faster updates
   });
+
+  // Real-time subscription for new orders
+  useEffect(() => {
+    const channel = supabase
+      .channel('kitchen-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'orders',
+        },
+        (payload) => {
+          const newOrder = payload.new as any;
+          // Only notify for non-bar-only orders
+          if (newOrder.order_type !== 'bar_only') {
+            setNewOrderAlert(true);
+            if (soundEnabled) {
+              playNotificationSound();
+            }
+            toast({
+              title: "🔔 New Order!",
+              description: `Order ${newOrder.order_number} received`,
+              duration: 5000,
+            });
+            queryClient.invalidateQueries({ queryKey: ["kitchen-orders"] });
+            setTimeout(() => setNewOrderAlert(false), 3000);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["kitchen-orders"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [soundEnabled, queryClient, toast]);
+
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio(NOTIFICATION_SOUND);
+      audio.volume = 0.8;
+      audio.play().catch(() => {
+        console.log("Audio playback blocked");
+      });
+    } catch (error) {
+      console.error("Failed to play sound:", error);
+    }
+  };
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
@@ -76,11 +140,6 @@ const Kitchen = () => {
       toast({ title: "Failed to update order", variant: "destructive" });
     },
   });
-
-  const playNotificationSound = () => {
-    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleC8EF3GVyvPr2JdhSjxAaYy9s6VhVkdXj8bg2L9tdEQ5RWV+rsvW24NnRDc/XXqivcfWm3JdSUM9RVWBqMbf2ZVnTEE9RVt+rcnf25RoTEE9RVuAs8rg25NoTEI9Rlt+rcnf25NoTEI9RVt+rcnf25NoTEI9RVt/rcnf25NoTEI9RVt/rcnf25NoTEE9RVt/rcnf');
-    audio.play().catch(() => {}); // Ignore errors if audio can't play
-  };
 
   const getBarName = (barId: string | null) => {
     if (!barId) return null;
@@ -138,12 +197,17 @@ const Kitchen = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div className={`relative ${newOrderAlert ? 'animate-bounce' : ''}`}>
             <ChefHat className="h-6 w-6 text-primary" />
-            Kitchen Display
-          </h1>
-          <p className="text-muted-foreground">Manage food orders in real-time</p>
+            {newOrderAlert && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-ping" />
+            )}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Kitchen Display</h1>
+            <p className="text-muted-foreground">Manage food orders in real-time</p>
+          </div>
         </div>
 
         <div className="flex gap-2 flex-wrap">
@@ -153,8 +217,12 @@ const Kitchen = () => {
             onClick={() => setSoundEnabled(!soundEnabled)}
             className="gap-1"
           >
-            <Volume2 className={`h-4 w-4 ${soundEnabled ? "" : "opacity-50"}`} />
-            Sound
+            {soundEnabled ? (
+              <Volume2 className="h-4 w-4" />
+            ) : (
+              <VolumeX className="h-4 w-4 opacity-50" />
+            )}
+            Sound {soundEnabled ? "On" : "Off"}
           </Button>
           <Button
             variant={filter === "pending" ? "default" : "outline"}
@@ -190,9 +258,12 @@ const Kitchen = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-amber-500/10 border-amber-500/20">
+        <Card className={`bg-amber-500/10 border-amber-500/20 ${newOrderAlert ? 'ring-2 ring-amber-500 animate-pulse' : ''}`}>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-amber-500">{pendingCount}</div>
+            <div className="flex items-center gap-2">
+              <Bell className={`h-4 w-4 text-amber-500 ${newOrderAlert ? 'animate-bounce' : ''}`} />
+              <div className="text-2xl font-bold text-amber-500">{pendingCount}</div>
+            </div>
             <p className="text-sm text-muted-foreground">Pending</p>
           </CardContent>
         </Card>

@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBars } from "@/hooks/useBars";
-import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
+import { exportTableToPDF, exportTableToExcel } from "@/lib/exportUtils";
 
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat("en-NG", {
@@ -169,7 +169,7 @@ const EODReport = () => {
 
   const handleExportPDF = () => {
     const headers = ["Order #", "Time", "Type", "Bar", "Items", "Payment", "Amount"];
-    const data = orders.map(order => [
+    const rows = orders.map(order => [
       order.order_number,
       format(new Date(order.created_at), "HH:mm"),
       order.order_type.replace("_", " "),
@@ -178,12 +178,12 @@ const EODReport = () => {
       order.payments.map(p => paymentLabels[p.payment_method] || p.payment_method).join(", "),
       formatPrice(order.total_amount),
     ]);
-    exportToPDF(`EOD Report - ${format(selectedDate, "dd MMM yyyy")}`, headers, data);
+    exportTableToPDF(`EOD Report - ${format(selectedDate, "dd MMM yyyy")}`, headers, rows);
   };
 
   const handleExportExcel = () => {
     const headers = ["Order #", "Time", "Type", "Bar", "Items", "Payment", "Cashier", "Amount"];
-    const data = orders.map(order => [
+    const rows = orders.map(order => [
       order.order_number,
       format(new Date(order.created_at), "HH:mm"),
       order.order_type.replace("_", " "),
@@ -193,7 +193,7 @@ const EODReport = () => {
       getCashierName(order.created_by),
       order.total_amount,
     ]);
-    exportToExcel(`EOD_Report_${format(selectedDate, "yyyy-MM-dd")}`, headers, data);
+    exportTableToExcel(`EOD_Report_${format(selectedDate, "yyyy-MM-dd")}`, headers, rows);
   };
 
   return (

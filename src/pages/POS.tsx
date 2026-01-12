@@ -70,7 +70,8 @@ const POS = () => {
   // Check if user needs bar assignment (only cashiers need assignment)
   const isCashier = role === "cashier";
   const isAssignedToBar = !!cashierAssignment;
-  const canAccessPOS = !isCashier || isAssignedToBar || role === "super_admin" || role === "manager" || role === "bar_staff";
+  const isPrivilegedRole = role === "super_admin" || role === "manager" || role === "bar_staff";
+  const canAccessPOS = !isCashier || isAssignedToBar || isPrivilegedRole;
 
   // Auto-set active bar for cashiers based on their assignment
   useEffect(() => {
@@ -451,7 +452,7 @@ const POS = () => {
         onClose={handleCloseCheckout}
         canReprint={canReprint}
         insufficientStock={stockValidation.insufficientItems}
-        barName={activeBar?.name}
+        cashierName={activeBar?.name}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBars } from "@/hooks/useBars";
 import { ReportsHeader } from "@/components/reports/ReportsHeader";
 import { SalesMetrics } from "@/components/reports/SalesMetrics";
 import { RevenueChart } from "@/components/reports/RevenueChart";
@@ -9,7 +10,6 @@ import { TopItemsChart } from "@/components/reports/TopItemsChart";
 import { SalesByType } from "@/components/reports/SalesByType";
 import { ProfitMetrics } from "@/components/reports/ProfitMetrics";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileDown, FileSpreadsheet } from "lucide-react";
 import { startOfDay, endOfDay, subDays, format } from "date-fns";
 import { exportToPDF, exportToExcel, generateReportHTML } from "@/lib/exportUtils";
@@ -21,9 +21,11 @@ const Reports = () => {
   const [dateRange, setDateRange] = useState<DateRange>("7days");
   const [customStart, setCustomStart] = useState<Date | undefined>();
   const [customEnd, setCustomEnd] = useState<Date | undefined>();
+  const [selectedBarFilter, setSelectedBarFilter] = useState<string>("all");
   const reportRef = useRef<HTMLDivElement>(null);
 
   const isSuperAdmin = role === "super_admin";
+  const { data: bars = [] } = useBars();
 
   const getDateFilter = () => {
     const now = new Date();
@@ -83,6 +85,29 @@ const Reports = () => {
   
   const profit = totalRevenue - totalCostPrice;
   const profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
+
+  // Calculate bar-specific profit data
+  const barProfitData = bars.map(bar => {
+    const barOrders = orders.filter(o => o.bar_id === bar.id);
+    const barSellingPrice = barOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+    const barCostPrice = barOrders.reduce((sum, order) => {
+      return sum + (order.order_items?.reduce((itemSum, item) => {
+        const costPrice = (item as any).menu_items?.cost_price || 0;
+        return itemSum + (Number(costPrice) * item.quantity);
+      }, 0) || 0);
+    }, 0);
+    const barProfit = barSellingPrice - barCostPrice;
+    const barProfitMargin = barSellingPrice > 0 ? (barProfit / barSellingPrice) * 100 : 0;
+
+    return {
+      barId: bar.id,
+      barName: bar.name,
+      costPrice: barCostPrice,
+      sellingPrice: barSellingPrice,
+      profit: barProfit,
+      profitMargin: barProfitMargin,
+    };
+  }).filter(b => b.sellingPrice > 0);
 
   // Revenue by day
   const revenueByDay = orders.reduce((acc, order) => {
@@ -232,6 +257,10 @@ const Reports = () => {
           profit={profit}
           profitMargin={profitMargin}
           isLoading={isLoading}
+          barProfitData={barProfitData}
+          selectedBarFilter={selectedBarFilter}
+          onBarFilterChange={setSelectedBarFilter}
+          bars={bars}
         />
       )}
 

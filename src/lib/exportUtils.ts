@@ -63,7 +63,95 @@ export const exportToPDF = (title: string, content: HTMLElement) => {
   }, 250);
 };
 
-// Excel/CSV Export
+// Simple PDF export with table data
+export const exportTableToPDF = (title: string, headers: string[], rows: (string | number)[][]) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+
+  const tableHTML = `
+    <table>
+      <thead>
+        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          h1 { font-size: 24px; margin-bottom: 20px; }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 20px;
+          }
+          th, td { 
+            border: 1px solid #ddd; 
+            padding: 8px; 
+            text-align: left; 
+          }
+          th { background-color: #f5f5f5; font-weight: 600; }
+          tr:nth-child(even) { background-color: #fafafa; }
+          @media print {
+            body { padding: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <p>Generated: ${new Date().toLocaleString()}</p>
+        ${tableHTML}
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+  
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 250);
+};
+
+// Simple Excel/CSV export with table data
+export const exportTableToExcel = (filename: string, headers: string[], rows: (string | number)[][]) => {
+  const headerRow = headers.join(',');
+  const dataRows = rows.map(row => 
+    row.map(cell => {
+      const value = String(cell);
+      if (value.includes(',') || value.includes('"')) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',')
+  );
+
+  const csvContent = [headerRow, ...dataRows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filename}.csv`;
+  link.click();
+  
+  URL.revokeObjectURL(url);
+};
+
+// Excel/CSV Export with column definitions
 export const exportToExcel = (filename: string, data: any[], columns: { key: string; header: string }[]) => {
   const headers = columns.map(c => c.header).join(',');
   const rows = data.map(row => 
