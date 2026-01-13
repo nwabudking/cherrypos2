@@ -7,12 +7,14 @@ import { useActiveMenuCategories } from "@/hooks/useMenu";
 import { useMenuItemsWithInventory, useBarInventoryStock, getMenuItemStockInfo, validateCartStock } from "@/hooks/useBarStock";
 import { useCreateOrder, CreateOrderData } from "@/hooks/useOrders";
 import { useCashierAssignment } from "@/hooks/useCashierAssignment";
+import { supabase } from "@/integrations/supabase/client";
 import { POSHeader } from "@/components/pos/POSHeader";
 import { CategoryTabs } from "@/components/pos/CategoryTabs";
 import { MenuGrid } from "@/components/pos/MenuGrid";
 import { CartPanel } from "@/components/pos/CartPanel";
 import { CheckoutDialog } from "@/components/pos/CheckoutDialog";
 import { BarSelector } from "@/components/pos/BarSelector";
+import { CashierBarDisplay } from "@/components/pos/CashierBarDisplay";
 import { StockWarningAlert } from "@/components/pos/StockWarningAlert";
 import { HeldOrdersPanel, HeldOrder } from "@/components/pos/HeldOrdersPanel";
 import { CashierRestrictionAlert } from "@/components/pos/CashierRestrictionAlert";
@@ -28,6 +30,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   notes?: string;
+  inventoryItemId?: string | null;
 }
 
 type OrderType = "dine_in" | "takeaway" | "delivery" | "bar_only";
@@ -162,7 +165,24 @@ const POS = () => {
     };
 
     createOrderMutation.mutate(orderData, {
-      onSuccess: (order) => {
+      onSuccess: async (order) => {
+        // Deduct inventory for items that track inventory
+        if (activeBar?.id) {
+          for (const cartItem of cart) {
+            if (cartItem.inventoryItemId) {
+              try {
+                await supabase.rpc('deduct_bar_inventory', {
+                  p_bar_id: activeBar.id,
+                  p_inventory_item_id: cartItem.inventoryItemId,
+                  p_quantity: cartItem.quantity,
+                });
+              } catch (err) {
+                console.error('Failed to deduct inventory:', err);
+              }
+            }
+          }
+        }
+        
         toast({
           title: "Order Created!",
           description: `Order ${order.order_number} has been placed successfully.`,
@@ -200,11 +220,14 @@ const POS = () => {
       return;
     }
 
+    // Get the menu item to get inventory_item_id
+    const menuItem = menuItems.find(m => m.id === item.id);
+    const inventoryItemId = menuItem?.inventory_item_id || null;
+
     setCart((prev) => {
       const existing = prev.find((i) => i.menuItemId === item.id);
       if (existing) {
         // Check if adding one more would exceed stock
-        const menuItem = menuItems.find(m => m.id === item.id);
         if (menuItem?.track_inventory && menuItem.inventory_item_id && barStockMap) {
           const barStock = barStockMap.get(menuItem.inventory_item_id);
           if (barStock && existing.quantity >= barStock.current_stock) {
@@ -228,6 +251,7 @@ const POS = () => {
           name: item.name,
           price: item.price,
           quantity: 1,
+          inventoryItemId,
         },
       ];
     });
@@ -376,7 +400,12 @@ const POS = () => {
           setTableNumber={setTableNumber}
         >
           <div className="flex items-center gap-2">
-            <BarSelector />
+            {/* Show bar selector for admins/managers, just display for cashiers */}
+            {isCashier ? (
+              <CashierBarDisplay />
+            ) : (
+              <BarSelector />
+            )}
             {cart.length > 0 && (
               <Button
                 variant="outline"

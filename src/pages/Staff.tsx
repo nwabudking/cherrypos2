@@ -7,6 +7,7 @@ import {
   useUpdateStaffRole,
   useDeleteStaff,
   useCreateStaff,
+  useResetPassword,
 } from "@/hooks/useStaff";
 import { useCashierAssignments } from "@/hooks/useCashierAssignment";
 import { StaffHeader } from "@/components/staff/StaffHeader";
@@ -14,6 +15,7 @@ import { StaffTable } from "@/components/staff/StaffTable";
 import { AddEditStaffDialog } from "@/components/staff/AddEditStaffDialog";
 import { DeleteStaffDialog } from "@/components/staff/DeleteStaffDialog";
 import { CashierAssignmentDialog } from "@/components/staff/CashierAssignmentDialog";
+import { ResetPasswordDialog } from "@/components/staff/ResetPasswordDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Store } from "lucide-react";
@@ -35,6 +37,7 @@ const Staff = () => {
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isAssignmentDialogOpen, setIsAssignmentDialogOpen] = useState(false);
+  const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -98,6 +101,11 @@ const Staff = () => {
   const handleAssignBar = (staff: StaffMember) => {
     setSelectedStaff(staff);
     setIsAssignmentDialogOpen(true);
+  };
+
+  const handleResetPassword = (staff: StaffMember) => {
+    setSelectedStaff(staff);
+    setIsResetPasswordDialogOpen(true);
   };
 
   const handleSaveStaff = (data: {
@@ -171,6 +179,7 @@ const Staff = () => {
         canManage={canManageStaff}
         currentUserId={user?.id}
         onAssignBar={handleAssignBar}
+        onResetPassword={handleResetPassword}
       />
 
       <AddEditStaffDialog
@@ -194,6 +203,12 @@ const Staff = () => {
         open={isAssignmentDialogOpen}
         onOpenChange={setIsAssignmentDialogOpen}
         staffMember={selectedStaff}
+      />
+
+      <ResetPasswordDialog
+        staff={selectedStaff}
+        open={isResetPasswordDialogOpen}
+        onOpenChange={setIsResetPasswordDialogOpen}
       />
     </div>
   );

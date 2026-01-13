@@ -107,14 +107,12 @@ export function useUpdateStaff() {
   
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: { full_name?: string; email?: string; avatar_url?: string } }) => {
-      const { data: result, error } = await supabase
+      const { error } = await supabase
         .from('profiles')
         .update(data)
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
       if (error) throw error;
-      return result;
+      return { id, ...data };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: staffKeys.all });
@@ -192,10 +190,11 @@ export function useDeleteStaff() {
     mutationFn: async (id: string) => {
       // Call the manage-staff edge function
       const { data: result, error } = await supabase.functions.invoke('manage-staff', {
-        body: { action: 'delete', user_id: id },
+        body: { action: 'delete', userId: id },
       });
       
       if (error) throw error;
+      if (result?.error) throw new Error(result.error);
       return result;
     },
     onSuccess: () => {
@@ -204,6 +203,23 @@ export function useDeleteStaff() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete staff member');
+    },
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async ({ email }: { email: string }) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Password reset email sent');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to send password reset email');
     },
   });
 }

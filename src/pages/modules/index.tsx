@@ -31,7 +31,7 @@ export { default as Bar } from '@/pages/Bar';
 export { default as Kitchen } from '@/pages/Kitchen';
 export { default as Inventory } from '@/pages/Inventory';
 export { default as Staff } from '@/pages/Staff';
-export const Customers = () => <PlaceholderPage title="Customers" description="Customer management coming soon" />;
+export { default as Customers } from '@/pages/Customers';
 export { default as Reports } from '@/pages/Reports';
 export { default as SettingsPage } from '@/pages/Settings';
 export { default as StorePage } from '@/pages/Store';

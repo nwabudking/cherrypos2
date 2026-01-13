@@ -49,7 +49,7 @@ const mainNavItems: NavItem[] = [
 ];
 
 const operationsNavItems: NavItem[] = [
-  { title: 'Bar', url: '/bar', icon: Wine, roles: ['super_admin', 'manager', 'bar_staff'] },
+  { title: 'Bar', url: '/bar', icon: Wine, roles: ['super_admin', 'manager', 'bar_staff', 'cashier'] },
   { title: 'Kitchen', url: '/kitchen', icon: ChefHat, roles: ['super_admin', 'manager', 'kitchen_staff'] },
 ];
 

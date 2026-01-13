@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Edit2, Trash2, Store } from "lucide-react";
+import { MoreHorizontal, Edit2, Trash2, Store, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import type { StaffMember } from "@/pages/Staff";
 
@@ -29,6 +29,7 @@ interface StaffTableProps {
   canManage: boolean;
   currentUserId?: string;
   onAssignBar?: (staff: StaffMember) => void;
+  onResetPassword?: (staff: StaffMember) => void;
 }
 
 const roleConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -51,6 +52,7 @@ export const StaffTable = ({
   canManage,
   currentUserId,
   onAssignBar,
+  onResetPassword,
 }: StaffTableProps) => {
   if (isLoading) {
     return (
@@ -167,6 +169,12 @@ export const StaffTable = ({
                           <DropdownMenuItem onClick={() => onAssignBar(member)}>
                             <Store className="h-4 w-4 mr-2" />
                             Assign to Bar
+                          </DropdownMenuItem>
+                        )}
+                        {onResetPassword && member.email && (
+                          <DropdownMenuItem onClick={() => onResetPassword(member)}>
+                            <KeyRound className="h-4 w-4 mr-2" />
+                            Reset Password
                           </DropdownMenuItem>
                         )}
                         {!isCurrentUser && (

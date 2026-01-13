@@ -62,8 +62,8 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         <div className="text-center mb-4">
           <h1 className="text-xl font-bold">CHERRY DINING</h1>
           <p className="text-xs">& Lounge</p>
-          <p className="text-xs mt-2">123 Restaurant Street</p>
-          <p className="text-xs">Lagos, Nigeria</p>
+          <p className="text-xs mt-2">Nicton Road</p>
+          <p className="text-xs">Bayelsa, Nigeria</p>
           <p className="text-xs">Tel: +234 800 000 0000</p>
         </div>
 
