@@ -55,6 +55,7 @@ export type Database = {
           bar_id: string
           created_at: string | null
           current_stock: number
+          expiry_date: string | null
           id: string
           inventory_item_id: string
           is_active: boolean | null
@@ -65,6 +66,7 @@ export type Database = {
           bar_id: string
           created_at?: string | null
           current_stock?: number
+          expiry_date?: string | null
           id?: string
           inventory_item_id: string
           is_active?: boolean | null
@@ -75,6 +77,7 @@ export type Database = {
           bar_id?: string
           created_at?: string | null
           current_stock?: number
+          expiry_date?: string | null
           id?: string
           inventory_item_id?: string
           is_active?: boolean | null
@@ -94,6 +97,73 @@ export type Database = {
             columns: ["inventory_item_id"]
             isOneToOne: false
             referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bar_to_bar_transfers: {
+        Row: {
+          approved_by: string | null
+          completed_at: string | null
+          created_at: string | null
+          destination_bar_id: string
+          id: string
+          inventory_item_id: string
+          notes: string | null
+          quantity: number
+          requested_by: string | null
+          source_bar_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          approved_by?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          destination_bar_id: string
+          id?: string
+          inventory_item_id: string
+          notes?: string | null
+          quantity: number
+          requested_by?: string | null
+          source_bar_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          approved_by?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          destination_bar_id?: string
+          id?: string
+          inventory_item_id?: string
+          notes?: string | null
+          quantity?: number
+          requested_by?: string | null
+          source_bar_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bar_to_bar_transfers_destination_bar_id_fkey"
+            columns: ["destination_bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bar_to_bar_transfers_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bar_to_bar_transfers_source_bar_id_fkey"
+            columns: ["source_bar_id"]
+            isOneToOne: false
+            referencedRelation: "bars"
             referencedColumns: ["id"]
           },
         ]
@@ -172,6 +242,7 @@ export type Database = {
           cost_per_unit: number | null
           created_at: string | null
           current_stock: number
+          expiry_date: string | null
           id: string
           is_active: boolean | null
           min_stock_level: number
@@ -187,6 +258,7 @@ export type Database = {
           cost_per_unit?: number | null
           created_at?: string | null
           current_stock?: number
+          expiry_date?: string | null
           id?: string
           is_active?: boolean | null
           min_stock_level?: number
@@ -202,6 +274,7 @@ export type Database = {
           cost_per_unit?: number | null
           created_at?: string | null
           current_stock?: number
+          expiry_date?: string | null
           id?: string
           is_active?: boolean | null
           min_stock_level?: number
