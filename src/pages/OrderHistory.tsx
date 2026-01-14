@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCashierAssignment } from "@/hooks/useCashierAssignment";
 import { format, startOfDay, endOfDay } from "date-fns";
-import { Search, Printer, Eye, History, CalendarIcon, X, Store } from "lucide-react";
+import { Search, Printer, Eye, History, CalendarIcon, X, Store, FileDown, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBars } from "@/hooks/useBars";
+import { exportTableToPDF, exportToExcel } from "@/lib/exportUtils";
 
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat("en-NG", {
@@ -166,6 +167,55 @@ const OrderHistory = () => {
   const handleViewReceipt = (order: Order) => {
     setSelectedOrder(order);
     setShowReceiptDialog(true);
+  };
+
+  const handleExportPDF = () => {
+    const headers = ["Order #", "Date", "Type", "Items", "Total", "Status", "Payment"];
+    const rows = filteredOrders.map((order) => [
+      order.order_number,
+      format(new Date(order.created_at), "MMM dd, yyyy HH:mm"),
+      orderTypeLabels[order.order_type] || order.order_type,
+      order.order_items?.length || 0,
+      formatPrice(order.total_amount),
+      order.status,
+      paymentLabels[order.payments?.[0]?.payment_method] || "-",
+    ]);
+    
+    const dateRange = startDate && endDate 
+      ? `${format(startDate, "MMM dd")} - ${format(endDate, "MMM dd, yyyy")}`
+      : "All Orders";
+    exportTableToPDF(`Order History - ${dateRange}`, headers, rows);
+  };
+
+  const handleExportExcel = () => {
+    const data = filteredOrders.map((order) => ({
+      order_number: order.order_number,
+      date: format(new Date(order.created_at), "yyyy-MM-dd HH:mm"),
+      type: orderTypeLabels[order.order_type] || order.order_type,
+      table: order.table_number || "",
+      items: order.order_items?.length || 0,
+      subtotal: order.subtotal,
+      total: order.total_amount,
+      status: order.status,
+      payment: order.payments?.[0]?.payment_method || "",
+      bar: getBarName(order.bar_id),
+    }));
+
+    const datePrefix = startDate && endDate
+      ? `${format(startDate, "yyyyMMdd")}_${format(endDate, "yyyyMMdd")}`
+      : "all";
+    exportToExcel(`order_history_${datePrefix}`, data, [
+      { key: "order_number", header: "Order Number" },
+      { key: "date", header: "Date" },
+      { key: "type", header: "Order Type" },
+      { key: "table", header: "Table" },
+      { key: "items", header: "Items" },
+      { key: "subtotal", header: "Subtotal" },
+      { key: "total", header: "Total" },
+      { key: "status", header: "Status" },
+      { key: "payment", header: "Payment Method" },
+      { key: "bar", header: "Bar" },
+    ]);
   };
 
   const handlePrint = (copyType: "customer" | "office") => {
@@ -300,6 +350,16 @@ const OrderHistory = () => {
                   </SelectContent>
                 </Select>
               )}
+              <div className="flex gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={handleExportPDF}>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel
+                </Button>
+              </div>
             </div>
             
             {/* Date Range Filters */}

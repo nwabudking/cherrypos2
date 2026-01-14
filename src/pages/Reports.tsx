@@ -9,6 +9,7 @@ import { RevenueChart } from "@/components/reports/RevenueChart";
 import { TopItemsChart } from "@/components/reports/TopItemsChart";
 import { SalesByType } from "@/components/reports/SalesByType";
 import { ProfitMetrics } from "@/components/reports/ProfitMetrics";
+import { AuditLogsSection } from "@/components/reports/AuditLogsSection";
 import { Button } from "@/components/ui/button";
 import { FileDown, FileSpreadsheet } from "lucide-react";
 import { startOfDay, endOfDay, subDays, format } from "date-fns";
@@ -285,6 +286,9 @@ const Reports = () => {
           isLoading={isLoading}
         />
       </div>
+
+      {/* Audit Logs Section (Super Admin Only) */}
+      {isSuperAdmin && <AuditLogsSection />}
     </div>
   );
 };

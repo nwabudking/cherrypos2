@@ -13,6 +13,7 @@ import {
   useAdjustStock,
 } from "@/hooks/useInventory";
 import { useBars, useTransferToBar, useInventoryTransfers } from "@/hooks/useBars";
+import { usePriceRealtimeSync } from "@/hooks/usePriceRealtimeSync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,6 +147,9 @@ const StorePage = () => {
   const { data: bars = [] } = useBars();
   const { data: transfers = [] } = useInventoryTransfers();
   const { data: suppliers = [] } = useSuppliers();
+  
+  // Enable real-time price sync
+  usePriceRealtimeSync();
   const transferMutation = useTransferToBar();
   
   // CRUD mutations

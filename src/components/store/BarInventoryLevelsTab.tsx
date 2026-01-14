@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useBars, useBarInventory } from "@/hooks/useBars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
@@ -18,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle, Package, Store } from "lucide-react";
+import { AlertTriangle, Package, Store, FileDown, FileSpreadsheet } from "lucide-react";
+import { exportTableToPDF, exportToExcel } from "@/lib/exportUtils";
 
 export const BarInventoryLevelsTab = () => {
   const { data: bars = [] } = useBars();
@@ -32,10 +34,50 @@ export const BarInventoryLevelsTab = () => {
   ).length;
   const outOfStockCount = inventory.filter(item => item.current_stock <= 0).length;
 
+  const selectedBar = bars.find(b => b.id === selectedBarId);
+
+  const handleExportPDF = () => {
+    if (!selectedBar) return;
+    const headers = ["Item", "Current Stock", "Min Level", "Status"];
+    const rows = inventory.map((item) => {
+      const isOutOfStock = item.current_stock <= 0;
+      const isLowStock = item.current_stock <= item.min_stock_level;
+      return [
+        item.inventory_item?.name || "Unknown",
+        `${item.current_stock} ${item.inventory_item?.unit || ""}`,
+        item.min_stock_level,
+        isOutOfStock ? "Out of Stock" : isLowStock ? "Low Stock" : "In Stock",
+      ];
+    });
+    exportTableToPDF(`Bar Inventory - ${selectedBar.name}`, headers, rows);
+  };
+
+  const handleExportExcel = () => {
+    if (!selectedBar) return;
+    const data = inventory.map((item) => {
+      const isOutOfStock = item.current_stock <= 0;
+      const isLowStock = item.current_stock <= item.min_stock_level;
+      return {
+        item: item.inventory_item?.name || "Unknown",
+        current_stock: item.current_stock,
+        unit: item.inventory_item?.unit || "",
+        min_level: item.min_stock_level,
+        status: isOutOfStock ? "Out of Stock" : isLowStock ? "Low Stock" : "In Stock",
+      };
+    });
+    exportToExcel(`bar_inventory_${selectedBar.name.toLowerCase().replace(/\s+/g, '_')}`, data, [
+      { key: "item", header: "Item" },
+      { key: "current_stock", header: "Current Stock" },
+      { key: "unit", header: "Unit" },
+      { key: "min_level", header: "Min Level" },
+      { key: "status", header: "Status" },
+    ]);
+  };
+
   return (
     <div className="space-y-4">
-      {/* Bar Selector */}
-      <div className="flex items-center gap-4">
+      {/* Bar Selector and Export */}
+      <div className="flex items-center justify-between gap-4">
         <Select value={selectedBarId} onValueChange={setSelectedBarId}>
           <SelectTrigger className="w-[250px]">
             <SelectValue placeholder="Select a bar to view inventory" />
@@ -51,6 +93,19 @@ export const BarInventoryLevelsTab = () => {
             ))}
           </SelectContent>
         </Select>
+
+        {selectedBarId && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPDF}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Export PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export Excel
+            </Button>
+          </div>
+        )}
       </div>
 
       {!selectedBarId ? (

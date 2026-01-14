@@ -8,6 +8,10 @@ import { OrdersHeader } from "@/components/orders/OrdersHeader";
 import { OrdersFilters } from "@/components/orders/OrdersFilters";
 import { OrdersTable } from "@/components/orders/OrdersTable";
 import { OrderDetailsDialog } from "@/components/orders/OrderDetailsDialog";
+import { Button } from "@/components/ui/button";
+import { FileDown, FileSpreadsheet } from "lucide-react";
+import { format } from "date-fns";
+import { exportTableToPDF, exportToExcel } from "@/lib/exportUtils";
 
 export type OrderWithItems = Order & {
   order_items?: OrderItem[];
@@ -80,12 +84,49 @@ const Orders = () => {
     ["completed", "cancelled"].includes(o.status)
   );
 
+  const formatPrice = (price: number) => new Intl.NumberFormat("en-NG", {
+    style: "currency", currency: "NGN", minimumFractionDigits: 0
+  }).format(price);
+
+  const handleExportPDF = () => {
+    const headers = ["Order #", "Type", "Items", "Total", "Status", "Time"];
+    const rows = orders.map((o) => [
+      o.order_number, o.order_type, o.order_items?.length || 0,
+      formatPrice(Number(o.total_amount)), o.status,
+      o.created_at ? format(new Date(o.created_at), "MMM dd HH:mm") : "-"
+    ]);
+    exportTableToPDF("Orders", headers, rows);
+  };
+
+  const handleExportExcel = () => {
+    const data = orders.map((o) => ({
+      order_number: o.order_number, type: o.order_type,
+      items: o.order_items?.length || 0, total: o.total_amount,
+      status: o.status, date: o.created_at ? format(new Date(o.created_at), "yyyy-MM-dd HH:mm") : ""
+    }));
+    exportToExcel("orders", data, [
+      { key: "order_number", header: "Order #" }, { key: "date", header: "Date" },
+      { key: "type", header: "Type" }, { key: "items", header: "Items" },
+      { key: "total", header: "Total" }, { key: "status", header: "Status" }
+    ]);
+  };
+
   return (
     <div className="space-y-6">
-      <OrdersHeader
-        activeCount={activeOrders.length}
-        completedCount={completedOrders.length}
-      />
+      <div className="flex justify-between items-start">
+        <OrdersHeader
+          activeCount={activeOrders.length}
+          completedCount={completedOrders.length}
+        />
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportPDF}>
+            <FileDown className="h-4 w-4 mr-2" />PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />Excel
+          </Button>
+        </div>
+      </div>
 
       <OrdersFilters
         statusFilter={statusFilter}
