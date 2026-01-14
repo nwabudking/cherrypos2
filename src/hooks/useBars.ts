@@ -19,6 +19,7 @@ export interface BarInventoryItem {
   current_stock: number;
   min_stock_level: number;
   is_active: boolean | null;
+  expiry_date: string | null;
   created_at: string | null;
   updated_at: string | null;
   inventory_item?: {
@@ -27,6 +28,7 @@ export interface BarInventoryItem {
     unit: string;
     category: string | null;
     cost_per_unit: number | null;
+    selling_price: number | null;
   };
 }
 
@@ -43,10 +45,41 @@ export interface InventoryTransfer {
   created_at: string | null;
   completed_at: string | null;
   destination_bar?: Bar;
+  source_bar?: Bar;
   inventory_item?: {
     id: string;
     name: string;
     unit: string;
+  };
+}
+
+export interface BarToBarTransfer {
+  id: string;
+  source_bar_id: string;
+  destination_bar_id: string;
+  inventory_item_id: string;
+  quantity: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'completed';
+  notes: string | null;
+  requested_by: string | null;
+  approved_by: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+  source_bar?: { id: string; name: string };
+  destination_bar?: { id: string; name: string };
+  inventory_item?: {
+    id: string;
+    name: string;
+    unit: string;
+  };
+  requester?: {
+    full_name: string | null;
+    email: string | null;
+  };
+  approver?: {
+    full_name: string | null;
+    email: string | null;
   };
 }
 
@@ -58,6 +91,8 @@ export const barsKeys = {
   detail: (id: string) => [...barsKeys.all, 'detail', id] as const,
   inventory: (barId: string) => [...barsKeys.all, 'inventory', barId] as const,
   transfers: () => [...barsKeys.all, 'transfers'] as const,
+  barToBarTransfers: () => [...barsKeys.all, 'bar-to-bar-transfers'] as const,
+  pendingTransfers: (barId: string) => [...barsKeys.all, 'pending-transfers', barId] as const,
 };
 
 // Bars hooks
@@ -188,7 +223,7 @@ export function useBarInventory(barId: string) {
         .from('bar_inventory')
         .select(`
           *,
-          inventory_item:inventory_items(id, name, unit, category, cost_per_unit)
+          inventory_item:inventory_items(id, name, unit, category, cost_per_unit, selling_price)
         `)
         .eq('bar_id', barId);
       if (error) throw error;
@@ -206,10 +241,9 @@ export function useLowStockBarInventory(barId: string) {
         .from('bar_inventory')
         .select(`
           *,
-          inventory_item:inventory_items(id, name, unit, category)
+          inventory_item:inventory_items(id, name, unit, category, cost_per_unit, selling_price)
         `)
-        .eq('bar_id', barId)
-        .lte('current_stock', supabase.rpc as any); // We'll filter in JS for now
+        .eq('bar_id', barId);
       
       if (error) throw error;
       
@@ -269,12 +303,281 @@ export function useInventoryTransfers() {
         .select(`
           *,
           destination_bar:bars!destination_bar_id(id, name),
+          source_bar:bars!source_bar_id(id, name),
           inventory_item:inventory_items(id, name, unit)
         `)
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
       return data as InventoryTransfer[];
+    },
+  });
+}
+
+// Bar to Bar Transfer hooks
+export function useBarToBarTransfers() {
+  return useQuery({
+    queryKey: barsKeys.barToBarTransfers(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bar_to_bar_transfers')
+        .select(`
+          *,
+          source_bar:bars!source_bar_id(id, name),
+          destination_bar:bars!destination_bar_id(id, name),
+          inventory_item:inventory_items(id, name, unit)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as unknown as BarToBarTransfer[];
+    },
+  });
+}
+
+export function usePendingTransfersForBar(barId: string) {
+  return useQuery({
+    queryKey: barsKeys.pendingTransfers(barId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bar_to_bar_transfers')
+        .select(`
+          *,
+          source_bar:bars!source_bar_id(id, name),
+          destination_bar:bars!destination_bar_id(id, name),
+          inventory_item:inventory_items(id, name, unit)
+        `)
+        .eq('destination_bar_id', barId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data as unknown as BarToBarTransfer[];
+    },
+    enabled: !!barId,
+  });
+}
+
+export function useCreateBarToBarTransfer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({
+      sourceBarId,
+      destinationBarId,
+      inventoryItemId,
+      quantity,
+      notes,
+      isAdminTransfer,
+    }: {
+      sourceBarId: string;
+      destinationBarId: string;
+      inventoryItemId: string;
+      quantity: number;
+      notes?: string;
+      isAdminTransfer?: boolean;
+    }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Get current stock at source bar
+      const { data: sourceInventory, error: stockError } = await supabase
+        .from('bar_inventory')
+        .select('current_stock')
+        .eq('bar_id', sourceBarId)
+        .eq('inventory_item_id', inventoryItemId)
+        .single();
+      
+      if (stockError) throw new Error('Failed to check source inventory');
+      if (!sourceInventory || sourceInventory.current_stock < quantity) {
+        throw new Error('Insufficient stock at source bar');
+      }
+      
+      if (isAdminTransfer) {
+        // Admin: Execute transfer immediately
+        // Deduct from source
+        await supabase
+          .from('bar_inventory')
+          .update({ 
+            current_stock: sourceInventory.current_stock - quantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('bar_id', sourceBarId)
+          .eq('inventory_item_id', inventoryItemId);
+        
+        // Add to destination
+        const { data: destInventory } = await supabase
+          .from('bar_inventory')
+          .select('*')
+          .eq('bar_id', destinationBarId)
+          .eq('inventory_item_id', inventoryItemId)
+          .maybeSingle();
+        
+        if (destInventory) {
+          await supabase
+            .from('bar_inventory')
+            .update({ 
+              current_stock: destInventory.current_stock + quantity,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', destInventory.id);
+        } else {
+          await supabase
+            .from('bar_inventory')
+            .insert({
+              bar_id: destinationBarId,
+              inventory_item_id: inventoryItemId,
+              current_stock: quantity,
+              min_stock_level: 5,
+            });
+        }
+        
+        // Create completed transfer record
+        const { error } = await supabase
+          .from('bar_to_bar_transfers')
+          .insert({
+            source_bar_id: sourceBarId,
+            destination_bar_id: destinationBarId,
+            inventory_item_id: inventoryItemId,
+            quantity,
+            notes,
+            status: 'completed',
+            requested_by: user?.id,
+            approved_by: user?.id,
+            completed_at: new Date().toISOString(),
+          });
+        
+        if (error) throw error;
+      } else {
+        // Cashier: Create pending request
+        const { error } = await supabase
+          .from('bar_to_bar_transfers')
+          .insert({
+            source_bar_id: sourceBarId,
+            destination_bar_id: destinationBarId,
+            inventory_item_id: inventoryItemId,
+            quantity,
+            notes,
+            status: 'pending',
+            requested_by: user?.id,
+          });
+        
+        if (error) throw error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: barsKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success(variables.isAdminTransfer ? 'Transfer completed successfully' : 'Transfer request submitted');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to create transfer');
+    },
+  });
+}
+
+export function useRespondToTransfer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({
+      transferId,
+      response,
+    }: {
+      transferId: string;
+      response: 'accepted' | 'rejected';
+    }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Get the transfer details
+      const { data: transfer, error: fetchError } = await supabase
+        .from('bar_to_bar_transfers')
+        .select('*')
+        .eq('id', transferId)
+        .single();
+      
+      if (fetchError || !transfer) throw new Error('Transfer not found');
+      
+      if (response === 'accepted') {
+        // Check source bar has sufficient stock
+        const { data: sourceInventory, error: stockError } = await supabase
+          .from('bar_inventory')
+          .select('current_stock')
+          .eq('bar_id', transfer.source_bar_id)
+          .eq('inventory_item_id', transfer.inventory_item_id)
+          .single();
+        
+        if (stockError || !sourceInventory || sourceInventory.current_stock < transfer.quantity) {
+          throw new Error('Insufficient stock at source bar');
+        }
+        
+        // Deduct from source
+        await supabase
+          .from('bar_inventory')
+          .update({ 
+            current_stock: sourceInventory.current_stock - transfer.quantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('bar_id', transfer.source_bar_id)
+          .eq('inventory_item_id', transfer.inventory_item_id);
+        
+        // Add to destination
+        const { data: destInventory } = await supabase
+          .from('bar_inventory')
+          .select('*')
+          .eq('bar_id', transfer.destination_bar_id)
+          .eq('inventory_item_id', transfer.inventory_item_id)
+          .maybeSingle();
+        
+        if (destInventory) {
+          await supabase
+            .from('bar_inventory')
+            .update({ 
+              current_stock: destInventory.current_stock + transfer.quantity,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', destInventory.id);
+        } else {
+          await supabase
+            .from('bar_inventory')
+            .insert({
+              bar_id: transfer.destination_bar_id,
+              inventory_item_id: transfer.inventory_item_id,
+              current_stock: transfer.quantity,
+              min_stock_level: 5,
+            });
+        }
+        
+        // Update transfer status to completed
+        const { error } = await supabase
+          .from('bar_to_bar_transfers')
+          .update({
+            status: 'completed',
+            approved_by: user?.id,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', transferId);
+        
+        if (error) throw error;
+      } else {
+        // Reject the transfer
+        const { error } = await supabase
+          .from('bar_to_bar_transfers')
+          .update({
+            status: 'rejected',
+            approved_by: user?.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', transferId);
+        
+        if (error) throw error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: barsKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success(variables.response === 'accepted' ? 'Transfer accepted' : 'Transfer rejected');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to respond to transfer');
     },
   });
 }
