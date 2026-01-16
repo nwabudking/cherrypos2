@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCashierAssignment } from "@/hooks/useCashierAssignment";
+import { useTransferNotifications } from "@/hooks/useTransferNotifications";
 import {
   useBars,
   useBarInventory,
@@ -48,9 +49,11 @@ import {
   Package,
   AlertCircle,
   Inbox,
+  Layers,
 } from "lucide-react";
 import { format } from "date-fns";
 import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
+import { BatchTransferDialog } from "@/components/store/BatchTransferDialog";
 
 const TransfersPage = () => {
   const { role, user } = useAuth();
@@ -61,11 +64,19 @@ const TransfersPage = () => {
   const isCashier = role === "cashier";
   const assignedBarId = assignment?.bar_id;
 
+  // Enable transfer notifications
+  useTransferNotifications({
+    enabled: true,
+    soundEnabled: true,
+    userId: user?.id,
+  });
+
   const { data: bars = [] } = useBars();
   const { data: allTransfers = [] } = useBarToBarTransfers();
   const { data: pendingTransfers = [] } = usePendingTransfersForBar(assignedBarId || "");
   
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [batchTransferDialogOpen, setBatchTransferDialogOpen] = useState(false);
   const [sourceBarId, setSourceBarId] = useState("");
   const [destinationBarId, setDestinationBarId] = useState("");
   const [inventoryItemId, setInventoryItemId] = useState("");
@@ -190,10 +201,16 @@ const TransfersPage = () => {
             {isAdmin ? "Transfer inventory between bar locations" : "Request and accept bar-to-bar transfers"}
           </p>
         </div>
-        <Button onClick={handleOpenTransferDialog}>
-          <Send className="h-4 w-4 mr-2" />
-          {isAdmin ? "Transfer Items" : "Request Transfer"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setBatchTransferDialogOpen(true)}>
+            <Layers className="h-4 w-4 mr-2" />
+            Batch Transfer
+          </Button>
+          <Button onClick={handleOpenTransferDialog}>
+            <Send className="h-4 w-4 mr-2" />
+            {isAdmin ? "Transfer Items" : "Request Transfer"}
+          </Button>
+        </div>
       </div>
 
       {isCashier && pendingTransfers.length > 0 && (
@@ -375,6 +392,12 @@ const TransfersPage = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Batch Transfer Dialog */}
+      <BatchTransferDialog
+        open={batchTransferDialogOpen}
+        onOpenChange={setBatchTransferDialogOpen}
+      />
     </div>
   );
 };

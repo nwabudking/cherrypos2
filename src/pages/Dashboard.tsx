@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LowStockDialog } from "@/components/dashboard/LowStockDialog";
+import { ExpiryWidget } from "@/components/dashboard/ExpiryWidget";
 import { supabase } from "@/integrations/supabase/client";
 import {
   DollarSign,
@@ -363,6 +364,9 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Expiry Widget */}
+      <ExpiryWidget />
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
