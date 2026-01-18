@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { format } from "date-fns";
 import type { CartItem } from "@/pages/POS";
+import { useSettings } from "@/hooks/useSettings";
 import cherryLogo from "@/assets/cherry-logo.png";
 
 interface ReceiptProps {
@@ -30,6 +31,17 @@ const paymentLabels: Record<string, string> = {
   mobile_money: "Mobile Money",
 };
 
+const currencySymbols: Record<string, string> = {
+  NGN: "₦",
+  USD: "$",
+  GBP: "£",
+  EUR: "€",
+  ZAR: "R",
+  KES: "KSh",
+  GHS: "₵",
+  AED: "AED",
+};
+
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
   (
     {
@@ -46,7 +58,24 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     },
     ref
   ) => {
+    const { data: settings } = useSettings();
     const now = new Date();
+
+    // Get currency symbol from settings
+    const currencySymbol = currencySymbols[settings?.currency || "NGN"] || "₦";
+    
+    // Determine logo to show
+    const showLogo = settings?.receipt_show_logo !== false;
+    const logoUrl = settings?.logo_url || cherryLogo;
+
+    // Get restaurant details from settings
+    const restaurantName = settings?.name || "Cherry Dining";
+    const tagline = settings?.tagline;
+    const address = settings?.address || "123 Restaurant Street";
+    const city = settings?.city || "Lagos";
+    const country = settings?.country || "Nigeria";
+    const phone = settings?.phone || "+234 800 000 0000";
+    const footerMessage = settings?.receipt_footer || "Thank you for dining with us!";
 
     return (
       <div
@@ -61,14 +90,18 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
         {/* Header with Logo */}
         <div className="text-center mb-4">
-          <img 
-            src={cherryLogo} 
-            alt="Cherry Dining & Lounge" 
-            className="mx-auto mb-2 w-[60px] h-auto"
-          />
-          <p className="text-xs mt-2">Nicton Road</p>
-          <p className="text-xs">Bayelsa, Nigeria</p>
-          <p className="text-xs">Tel: +234 800 000 0000</p>
+          {showLogo && (
+            <img 
+              src={logoUrl} 
+              alt={restaurantName} 
+              className="mx-auto mb-2 w-[60px] h-auto"
+            />
+          )}
+          <h2 className="font-bold text-base">{restaurantName}</h2>
+          {tagline && <p className="text-xs">{tagline}</p>}
+          <p className="text-xs mt-2">{address}</p>
+          <p className="text-xs">{city}, {country}</p>
+          <p className="text-xs">Tel: {phone}</p>
         </div>
 
         <div className="border-t border-dashed border-gray-400 my-3" />
@@ -125,7 +158,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                 <span className="flex-1 truncate pr-2">
                   {item.quantity}x {item.name}
                 </span>
-                <span>₦{(item.price * item.quantity).toLocaleString()}</span>
+                <span>{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
               </div>
               {item.notes && (
                 <p className="text-[10px] text-gray-600 pl-4">Note: {item.notes}</p>
@@ -140,12 +173,12 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         <div className="space-y-1 text-xs">
           <div className="flex justify-between">
             <span>Subtotal:</span>
-            <span>₦{subtotal.toLocaleString()}</span>
+            <span>{currencySymbol}{subtotal.toLocaleString()}</span>
           </div>
           <div className="border-t border-gray-400 my-2" />
           <div className="flex justify-between font-bold text-base">
             <span>TOTAL:</span>
-            <span>₦{total.toLocaleString()}</span>
+            <span>{currencySymbol}{total.toLocaleString()}</span>
           </div>
         </div>
 
@@ -167,7 +200,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
         {/* Footer */}
         <div className="text-center text-xs space-y-2">
-          <p className="font-bold">Thank you for dining with us!</p>
+          <p className="font-bold">{footerMessage}</p>
           <p>We hope to see you again soon.</p>
           <p className="text-[10px] text-gray-500 mt-4">
             This receipt serves as proof of payment
