@@ -1,4 +1,4 @@
-import { useState, forwardRef } from "react";
+import { useState, forwardRef, useMemo } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -30,9 +30,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useAuth } from "@/contexts/AuthContext";
+import { useEffectiveUser } from "@/hooks/useEffectiveUser";
 import { useBars, useBarInventory, barsKeys, BarInventoryItem } from "@/hooks/useBars";
-import { useCashierAssignment } from "@/hooks/useCashierAssignment";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Package, ArrowRightLeft, Trash2 } from "lucide-react";
@@ -52,14 +51,11 @@ interface TransferItem {
 
 export const BatchTransferDialog = forwardRef<HTMLDivElement, BatchTransferDialogProps>(
   ({ open, onOpenChange }, ref) => {
-  const { role, user } = useAuth();
+  const { userId, role, barId, isLocalStaff } = useEffectiveUser();
   const queryClient = useQueryClient();
-  const assignmentQuery = useCashierAssignment(user?.id || "");
-  const assignment = assignmentQuery.data;
   
   const isAdmin = role === "super_admin" || role === "manager" || role === "store_admin";
-  const isCashier = role === "cashier";
-  const assignedBarId = assignment?.bar_id;
+  const isCashierOrWaiter = role === "cashier" || role === "waitstaff";
 
   const { data: bars = [] } = useBars();
   const [sourceBarId, setSourceBarId] = useState("");
@@ -68,101 +64,36 @@ export const BatchTransferDialog = forwardRef<HTMLDivElement, BatchTransferDialo
   const [selectedItems, setSelectedItems] = useState<TransferItem[]>([]);
   const [selectAllMode, setSelectAllMode] = useState(false);
 
-  const effectiveSourceBarId = isCashier ? assignedBarId || "" : sourceBarId;
+  const effectiveSourceBarId = isCashierOrWaiter ? barId || "" : sourceBarId;
   const { data: sourceInventory = [] } = useBarInventory(effectiveSourceBarId);
   
-  const activeBars = bars.filter(b => b.is_active);
+  const activeBars = useMemo(() => bars.filter(b => b.is_active), [bars]);
 
   const batchTransferMutation = useMutation({
     mutationFn: async () => {
       if (selectedItems.length === 0) throw new Error("No items selected");
       if (!destinationBarId) throw new Error("No destination bar selected");
+      if (!effectiveSourceBarId) throw new Error("No source bar selected");
       
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      
+      // Use RPC function for transfers - works for both auth users and staff
       for (const item of selectedItems) {
         if (item.quantity <= 0 || item.quantity > item.availableStock) {
           throw new Error(`Invalid quantity for ${item.itemName}`);
         }
         
-        // Get current stock
-        const { data: sourceInv, error: stockError } = await supabase
-          .from('bar_inventory')
-          .select('current_stock')
-          .eq('bar_id', effectiveSourceBarId)
-          .eq('inventory_item_id', item.inventoryItemId)
-          .single();
+        const { data, error } = await supabase.rpc("create_bar_to_bar_transfer", {
+          p_source_bar_id: effectiveSourceBarId,
+          p_destination_bar_id: destinationBarId,
+          p_inventory_item_id: item.inventoryItemId,
+          p_quantity: item.quantity,
+          p_notes: notes || `Batch transfer: ${selectedItems.length} items`,
+          p_admin_complete: isAdmin,
+        });
         
-        if (stockError || !sourceInv || sourceInv.current_stock < item.quantity) {
-          throw new Error(`Insufficient stock for ${item.itemName}`);
-        }
-        
-        if (isAdmin) {
-          // Admin: Execute immediately
-          // Deduct from source
-          await supabase
-            .from('bar_inventory')
-            .update({
-              current_stock: sourceInv.current_stock - item.quantity,
-              updated_at: new Date().toISOString()
-            })
-            .eq('bar_id', effectiveSourceBarId)
-            .eq('inventory_item_id', item.inventoryItemId);
-          
-          // Add to destination
-          const { data: destInv } = await supabase
-            .from('bar_inventory')
-            .select('*')
-            .eq('bar_id', destinationBarId)
-            .eq('inventory_item_id', item.inventoryItemId)
-            .maybeSingle();
-          
-          if (destInv) {
-            await supabase
-              .from('bar_inventory')
-              .update({
-                current_stock: destInv.current_stock + item.quantity,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', destInv.id);
-          } else {
-            await supabase
-              .from('bar_inventory')
-              .insert({
-                bar_id: destinationBarId,
-                inventory_item_id: item.inventoryItemId,
-                current_stock: item.quantity,
-                min_stock_level: 5,
-              });
-          }
-          
-          // Record the transfer
-          await supabase
-            .from('bar_to_bar_transfers')
-            .insert({
-              source_bar_id: effectiveSourceBarId,
-              destination_bar_id: destinationBarId,
-              inventory_item_id: item.inventoryItemId,
-              quantity: item.quantity,
-              notes: notes || `Batch transfer: ${selectedItems.length} items`,
-              status: 'completed',
-              requested_by: currentUser?.id,
-              approved_by: currentUser?.id,
-              completed_at: new Date().toISOString(),
-            });
-        } else {
-          // Cashier: Create pending requests
-          await supabase
-            .from('bar_to_bar_transfers')
-            .insert({
-              source_bar_id: effectiveSourceBarId,
-              destination_bar_id: destinationBarId,
-              inventory_item_id: item.inventoryItemId,
-              quantity: item.quantity,
-              notes: notes || `Batch transfer request: ${selectedItems.length} items`,
-              status: 'pending',
-              requested_by: currentUser?.id,
-            });
+        if (error) throw error;
+        const result = data as { success?: boolean; message?: string } | null;
+        if (result && !result.success) {
+          throw new Error(result.message || `Failed to transfer ${item.itemName}`);
         }
       }
     },
@@ -284,7 +215,7 @@ export const BatchTransferDialog = forwardRef<HTMLDivElement, BatchTransferDialo
             <div className="space-y-2">
               <Label className="text-muted-foreground">From Bar</Label>
               <div className="p-2 rounded-lg bg-muted/50 font-medium">
-                {bars.find(b => b.id === assignedBarId)?.name || 'Loading...'}
+                {bars.find(b => b.id === barId)?.name || 'Loading...'}
               </div>
             </div>
           )}
@@ -306,7 +237,7 @@ export const BatchTransferDialog = forwardRef<HTMLDivElement, BatchTransferDialo
           </div>
         </div>
 
-        {(isCashier || sourceBarId) && (
+        {(isCashierOrWaiter || sourceBarId) && (
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -429,7 +360,7 @@ export const BatchTransferDialog = forwardRef<HTMLDivElement, BatchTransferDialo
               batchTransferMutation.isPending ||
               selectedItems.length === 0 ||
               !destinationBarId ||
-              (isAdmin && !sourceBarId && !isCashier)
+              (isAdmin && !sourceBarId && !isCashierOrWaiter)
             }
           >
             {batchTransferMutation.isPending 

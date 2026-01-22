@@ -1,183 +1,100 @@
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useCallback } from 'react';
+import { useQueryClient, QueryKey } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { inventoryKeys } from './useInventory';
 import { menuKeys } from './useMenu';
 import { barsKeys } from './useBars';
 import { settingsKeys } from './useSettings';
 import { staffKeys } from './useStaff';
+import { staffUsersKeys } from './useStaffUsers';
 
 /**
  * Global realtime sync hook that subscribes to database changes
- * and automatically invalidates relevant React Query caches
+ * and automatically invalidates relevant React Query caches.
+ * Uses debouncing to prevent excessive cache invalidations.
  */
 export function useRealtimeSync() {
   const queryClient = useQueryClient();
+  const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  // Debounced invalidation to prevent rapid-fire cache clears
+  const debouncedInvalidate = useCallback((key: string, queryKeys: QueryKey[]) => {
+    const existing = debounceTimers.current.get(key);
+    if (existing) clearTimeout(existing);
+    
+    debounceTimers.current.set(key, setTimeout(() => {
+      queryKeys.forEach(qk => queryClient.invalidateQueries({ queryKey: qk }));
+      debounceTimers.current.delete(key);
+    }, 300));
+  }, [queryClient]);
 
   useEffect(() => {
-    // Subscribe to inventory_items changes
-    const inventoryChannel = supabase
-      .channel('inventory-realtime')
+    // Single channel for all table subscriptions (more efficient than multiple channels)
+    const channel = supabase
+      .channel('global-realtime')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'inventory_items',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: inventoryKeys.items() });
-          queryClient.invalidateQueries({ queryKey: ['inventory-items-active'] });
-        }
+        { event: '*', schema: 'public', table: 'inventory_items' },
+        () => debouncedInvalidate('inventory', [[...inventoryKeys.items()], ['inventory-items-active']])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'menu_items' },
+        () => debouncedInvalidate('menu', [[...menuKeys.items()], ['menu-items'], ['menu-items-all']])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'menu_categories' },
+        () => debouncedInvalidate('categories', [[...menuKeys.categories()], ['menu-categories']])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => debouncedInvalidate('orders', [['orders'], ['kitchen-orders'], ['bar-orders'], ['order-history']])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bar_inventory' },
+        () => debouncedInvalidate('bar-inventory', [[...barsKeys.all]])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bar_to_bar_transfers' },
+        () => debouncedInvalidate('transfers', [[...barsKeys.barToBarTransfers()], [...barsKeys.all]])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => debouncedInvalidate('profiles', [[...staffKeys.all], ['profiles']])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'staff_users' },
+        () => debouncedInvalidate('staff-users', [[...staffUsersKeys.all]])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'restaurant_settings' },
+        () => debouncedInvalidate('settings', [[...settingsKeys.all]])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'suppliers' },
+        () => debouncedInvalidate('suppliers', [[...inventoryKeys.suppliers()]])
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cashier_bar_assignments' },
+        () => debouncedInvalidate('assignments', [['cashier-assignments']])
       )
       .subscribe();
 
-    // Subscribe to menu_items changes
-    const menuChannel = supabase
-      .channel('menu-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'menu_items',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: menuKeys.items() });
-          queryClient.invalidateQueries({ queryKey: ['menu-items'] });
-          queryClient.invalidateQueries({ queryKey: ['menu-items-all'] });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to menu_categories changes
-    const categoriesChannel = supabase
-      .channel('categories-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'menu_categories',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: menuKeys.categories() });
-          queryClient.invalidateQueries({ queryKey: ['menu-categories'] });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to orders changes
-    const ordersChannel = supabase
-      .channel('orders-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-          queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
-          queryClient.invalidateQueries({ queryKey: ['bar-orders'] });
-          queryClient.invalidateQueries({ queryKey: ['order-history'] });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to bar_inventory changes
-    const barInventoryChannel = supabase
-      .channel('bar-inventory-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bar_inventory',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: barsKeys.all });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to bar_to_bar_transfers changes
-    const transfersChannel = supabase
-      .channel('transfers-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bar_to_bar_transfers',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: barsKeys.barToBarTransfers() });
-          queryClient.invalidateQueries({ queryKey: barsKeys.all });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to profiles changes
-    const profilesChannel = supabase
-      .channel('profiles-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'profiles',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: staffKeys.all });
-          queryClient.invalidateQueries({ queryKey: ['profiles'] });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to restaurant_settings changes
-    const settingsChannel = supabase
-      .channel('settings-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'restaurant_settings',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: settingsKeys.all });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to suppliers changes
-    const suppliersChannel = supabase
-      .channel('suppliers-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'suppliers',
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: inventoryKeys.suppliers() });
-        }
-      )
-      .subscribe();
-
+    // Cleanup on unmount
     return () => {
-      supabase.removeChannel(inventoryChannel);
-      supabase.removeChannel(menuChannel);
-      supabase.removeChannel(categoriesChannel);
-      supabase.removeChannel(ordersChannel);
-      supabase.removeChannel(barInventoryChannel);
-      supabase.removeChannel(transfersChannel);
-      supabase.removeChannel(profilesChannel);
-      supabase.removeChannel(settingsChannel);
-      supabase.removeChannel(suppliersChannel);
+      // Clear any pending debounce timers
+      debounceTimers.current.forEach(timer => clearTimeout(timer));
+      debounceTimers.current.clear();
+      supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, debouncedInvalidate]);
 }
