@@ -134,17 +134,26 @@ export const MenuItemDialog = ({ open, onOpenChange, editingItem }: MenuItemDial
           .select("id")
           .single();
 
-        if (invError) throw invError;
-        inventoryItemId = newInventoryItem.id;
+        // If pooler connection fails, still try to save menu item without inventory link
+        if (invError) {
+          console.warn("Failed to create inventory item:", invError.message);
+          // Continue without inventory item link
+        } else {
+          inventoryItemId = newInventoryItem.id;
+        }
       } else if (inventoryItemId) {
-        // Sync prices to existing inventory item
-        await supabase
+        // Sync prices to existing inventory item - don't throw on failure
+        const { error: updateError } = await supabase
           .from("inventory_items")
           .update({
             cost_per_unit: costPrice,
             selling_price: sellingPrice,
           })
           .eq("id", inventoryItemId);
+        
+        if (updateError) {
+          console.warn("Failed to sync inventory prices:", updateError.message);
+        }
       }
 
       const payload = {
@@ -157,7 +166,7 @@ export const MenuItemDialog = ({ open, onOpenChange, editingItem }: MenuItemDial
         is_available: inventoryItemId ? false : form.is_available, // Start unavailable if tracked
         is_active: form.is_active,
         inventory_item_id: inventoryItemId,
-        track_inventory: true, // Always track inventory
+        track_inventory: !!inventoryItemId, // Only track if linked
       };
 
       if (editingItem) {
@@ -172,15 +181,16 @@ export const MenuItemDialog = ({ open, onOpenChange, editingItem }: MenuItemDial
       }
     },
     onSuccess: () => {
-      toast({ title: editingItem ? "Item updated" : "Item created" });
+      toast({ title: editingItem ? "Item updated successfully" : "Item created successfully" });
       queryClient.invalidateQueries({ queryKey: ["menu-items-all"] });
       queryClient.invalidateQueries({ queryKey: ["menu-items"] });
       queryClient.invalidateQueries({ queryKey: ["inventory-items"] });
       queryClient.invalidateQueries({ queryKey: ["inventory-items-active"] });
       onOpenChange(false);
     },
-    onError: (error) => {
-      toast({ title: "Error saving item", description: String(error), variant: "destructive" });
+    onError: (error: Error) => {
+      console.error("Menu item save error:", error);
+      toast({ title: "Error saving item", description: error.message, variant: "destructive" });
     },
   });
 
