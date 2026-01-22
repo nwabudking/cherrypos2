@@ -67,7 +67,7 @@ const storeNavItems: NavItem[] = [
 const managementNavItems: NavItem[] = [
   { title: 'Suppliers', url: '/inventory', icon: Truck, roles: ['super_admin', 'manager', 'inventory_officer'] },
   { title: 'Staff', url: '/staff', icon: Users, roles: ['super_admin', 'manager'] },
-  { title: 'Customers', url: '/customers', icon: Heart, roles: ['super_admin', 'manager', 'cashier'] },
+  { title: 'Customers', url: '/customers', icon: Heart, roles: ['super_admin', 'manager', 'cashier', 'waitstaff'] },
   { title: 'Reports', url: '/reports', icon: BarChart3, roles: ['super_admin', 'manager', 'accountant'] },
   { title: 'Settings', url: '/settings', icon: Settings, roles: ['super_admin', 'manager'] },
   { title: 'Migration', url: '/migration', icon: DatabaseBackup, roles: ['super_admin'] },

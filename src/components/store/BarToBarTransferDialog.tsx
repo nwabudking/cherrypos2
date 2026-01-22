@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -20,7 +20,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowRight, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useBars, useBarInventory, type Bar, type BarInventoryItem } from "@/hooks/useBars";
+import { useBars, useBarInventory, barsKeys } from "@/hooks/useBars";
+import { useEffectiveUser } from "@/hooks/useEffectiveUser";
 import { toast } from "sonner";
 
 interface BarToBarTransferDialogProps {
@@ -34,6 +35,10 @@ export const BarToBarTransferDialog = ({
 }: BarToBarTransferDialogProps) => {
   const queryClient = useQueryClient();
   const { data: bars = [] } = useBars();
+  const { role, barId: assignedBarId } = useEffectiveUser();
+  
+  const isAdmin = role === "super_admin" || role === "manager" || role === "store_admin";
+  const isCashierOrWaiter = role === "cashier" || role === "waitstaff";
   
   const [sourceBarId, setSourceBarId] = useState<string>("");
   const [destinationBarId, setDestinationBarId] = useState<string>("");
@@ -41,17 +46,19 @@ export const BarToBarTransferDialog = ({
   const [quantity, setQuantity] = useState<number>(1);
   const [notes, setNotes] = useState("");
 
-  const { data: sourceInventory = [] } = useBarInventory(sourceBarId);
+  const effectiveSourceBarId = isCashierOrWaiter ? assignedBarId || "" : sourceBarId;
+  const { data: sourceInventory = [] } = useBarInventory(effectiveSourceBarId);
   
   const selectedItem = sourceInventory.find(i => i.inventory_item_id === inventoryItemId);
+  const activeBars = useMemo(() => bars.filter(b => b.is_active), [bars]);
 
   const transferMutation = useMutation({
     mutationFn: async () => {
-      if (!sourceBarId || !destinationBarId || !inventoryItemId || quantity <= 0) {
+      if (!effectiveSourceBarId || !destinationBarId || !inventoryItemId || quantity <= 0) {
         throw new Error("Please fill in all required fields");
       }
 
-      if (sourceBarId === destinationBarId) {
+      if (effectiveSourceBarId === destinationBarId) {
         throw new Error("Source and destination bars must be different");
       }
 
@@ -59,73 +66,25 @@ export const BarToBarTransferDialog = ({
         throw new Error("Insufficient stock at source bar");
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
+      // Use RPC function for transfers - works for both auth users and staff
+      const { data, error } = await supabase.rpc("create_bar_to_bar_transfer", {
+        p_source_bar_id: effectiveSourceBarId,
+        p_destination_bar_id: destinationBarId,
+        p_inventory_item_id: inventoryItemId,
+        p_quantity: quantity,
+        p_notes: notes || null,
+        p_admin_complete: isAdmin,
+      });
 
-      // Deduct from source bar
-      const { error: deductError } = await supabase
-        .from('bar_inventory')
-        .update({ 
-          current_stock: (selectedItem?.current_stock || 0) - quantity,
-          updated_at: new Date().toISOString()
-        })
-        .eq('bar_id', sourceBarId)
-        .eq('inventory_item_id', inventoryItemId);
-
-      if (deductError) throw deductError;
-
-      // Check if destination bar has inventory entry
-      const { data: destInventory } = await supabase
-        .from('bar_inventory')
-        .select('*')
-        .eq('bar_id', destinationBarId)
-        .eq('inventory_item_id', inventoryItemId)
-        .maybeSingle();
-
-      if (destInventory) {
-        // Update existing entry
-        const { error: updateError } = await supabase
-          .from('bar_inventory')
-          .update({ 
-            current_stock: destInventory.current_stock + quantity,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', destInventory.id);
-
-        if (updateError) throw updateError;
-      } else {
-        // Create new entry
-        const { error: insertError } = await supabase
-          .from('bar_inventory')
-          .insert({
-            bar_id: destinationBarId,
-            inventory_item_id: inventoryItemId,
-            current_stock: quantity,
-            min_stock_level: 5,
-          });
-
-        if (insertError) throw insertError;
+      if (error) throw error;
+      const result = data as { success?: boolean; message?: string } | null;
+      if (result && !result.success) {
+        throw new Error(result.message || 'Transfer failed');
       }
-
-      // Create transfer record
-      const { error: transferError } = await supabase
-        .from('inventory_transfers')
-        .insert({
-          source_type: 'bar',
-          source_bar_id: sourceBarId,
-          destination_bar_id: destinationBarId,
-          inventory_item_id: inventoryItemId,
-          quantity,
-          notes,
-          transferred_by: user?.id,
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        });
-
-      if (transferError) throw transferError;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bars'] });
-      toast.success('Inventory transferred successfully');
+      queryClient.invalidateQueries({ queryKey: barsKeys.all });
+      toast.success(isAdmin ? 'Inventory transferred successfully' : 'Transfer request submitted');
       onOpenChange(false);
       resetForm();
     },
@@ -142,7 +101,7 @@ export const BarToBarTransferDialog = ({
     setNotes("");
   };
 
-  const activeBars = bars.filter(b => b.is_active);
+  
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -159,21 +118,30 @@ export const BarToBarTransferDialog = ({
 
         <form onSubmit={(e) => { e.preventDefault(); transferMutation.mutate(); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>From Bar</Label>
-              <Select value={sourceBarId} onValueChange={(v) => { setSourceBarId(v); setInventoryItemId(""); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select source" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeBars.map((bar) => (
-                    <SelectItem key={bar.id} value={bar.id} disabled={bar.id === destinationBarId}>
-                      {bar.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {isAdmin ? (
+              <div className="space-y-2">
+                <Label>From Bar</Label>
+                <Select value={sourceBarId} onValueChange={(v) => { setSourceBarId(v); setInventoryItemId(""); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeBars.map((bar) => (
+                      <SelectItem key={bar.id} value={bar.id} disabled={bar.id === destinationBarId}>
+                        {bar.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">From Bar</Label>
+                <div className="p-2 rounded-lg bg-muted/50 font-medium">
+                  {bars.find(b => b.id === assignedBarId)?.name || 'Loading...'}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>To Bar</Label>
@@ -182,8 +150,8 @@ export const BarToBarTransferDialog = ({
                   <SelectValue placeholder="Select destination" />
                 </SelectTrigger>
                 <SelectContent>
-                  {activeBars.map((bar) => (
-                    <SelectItem key={bar.id} value={bar.id} disabled={bar.id === sourceBarId}>
+                  {activeBars.filter(bar => bar.id !== effectiveSourceBarId).map((bar) => (
+                    <SelectItem key={bar.id} value={bar.id}>
                       {bar.name}
                     </SelectItem>
                   ))}
@@ -192,7 +160,7 @@ export const BarToBarTransferDialog = ({
             </div>
           </div>
 
-          {sourceBarId && (
+          {(isCashierOrWaiter || sourceBarId) && (
             <div className="space-y-2">
               <Label>Item to Transfer</Label>
               <Select value={inventoryItemId} onValueChange={setInventoryItemId}>
