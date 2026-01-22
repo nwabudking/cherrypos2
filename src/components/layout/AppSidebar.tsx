@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth, AppRole } from '@/contexts/AuthContext';
+import { useStaffAuth } from '@/contexts/StaffAuthContext';
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +19,6 @@ import {
   ShoppingCart,
   ClipboardList,
   History,
-  Grid3X3,
   Wine,
   ChefHat,
   Truck,
@@ -72,14 +72,18 @@ const managementNavItems: NavItem[] = [
 ];
 
 export const AppSidebar = () => {
-  const { role } = useAuth();
+  const { role: authRole } = useAuth();
+  const { staffUser, isStaffAuthenticated } = useStaffAuth();
   const location = useLocation();
+
+  // Use staff role if staff authenticated, otherwise use Supabase auth role
+  const effectiveRole = isStaffAuthenticated ? staffUser?.role : authRole;
 
   const filterByRole = (items: NavItem[]) => {
     return items.filter((item) => {
       if (!item.roles) return true;
-      if (!role) return false;
-      return item.roles.includes(role);
+      if (!effectiveRole) return false;
+      return item.roles.includes(effectiveRole as AppRole);
     });
   };
 

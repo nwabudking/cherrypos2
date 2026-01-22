@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStaffAuth } from '@/contexts/StaffAuthContext';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { UserMenu } from '@/components/layout/UserMenu';
@@ -8,19 +9,23 @@ import { Loader2, Cherry } from 'lucide-react';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 export const DashboardLayout = () => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { staffUser, isStaffAuthenticated, isLoading: staffLoading } = useStaffAuth();
   const navigate = useNavigate();
   
   // Enable global realtime sync for all pages
   useRealtimeSync();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('/auth');
-    }
-  }, [user, loading, navigate]);
+  const isLoading = authLoading || staffLoading;
+  const isAuthenticated = !!user || isStaffAuthenticated;
 
-  if (loading) {
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate('/staff-login');
+    }
+  }, [isAuthenticated, isLoading, navigate]);
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -33,7 +38,7 @@ export const DashboardLayout = () => {
     );
   }
 
-  if (!user) {
+  if (!isAuthenticated) {
     return null;
   }
 

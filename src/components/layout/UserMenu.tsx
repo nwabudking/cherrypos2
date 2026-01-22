@@ -1,4 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
+import { useStaffAuth } from '@/contexts/StaffAuthContext';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,37 +21,55 @@ const roleLabels: Record<string, string> = {
   kitchen_staff: 'Kitchen Staff',
   inventory_officer: 'Inventory Officer',
   accountant: 'Accountant',
+  store_admin: 'Store Admin',
+  store_user: 'Store User',
+  waitstaff: 'Waitstaff',
 };
 
 export const UserMenu = () => {
   const { user, profile, role, signOut } = useAuth();
+  const { staffUser, isStaffAuthenticated, staffLogout } = useStaffAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/auth');
+    if (isStaffAuthenticated) {
+      staffLogout();
+      navigate('/staff-login');
+    } else {
+      await signOut();
+      navigate('/auth');
+    }
   };
 
-  const initials = profile?.full_name
-    ? profile.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-    : user?.email?.slice(0, 2).toUpperCase() || 'U';
+  // Determine display values based on auth type
+  const displayName = isStaffAuthenticated 
+    ? staffUser?.full_name 
+    : profile?.full_name || user?.email || 'User';
+  
+  const displayRole = isStaffAuthenticated 
+    ? staffUser?.role 
+    : role;
+
+  const initials = displayName
+    ? displayName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+    : 'U';
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="flex items-center gap-3 px-2 hover:bg-muted">
           <Avatar className="h-8 w-8 border border-border">
-            <AvatarImage src={profile?.avatar_url || undefined} />
+            <AvatarImage src={!isStaffAuthenticated ? profile?.avatar_url || undefined : undefined} />
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
               {initials}
             </AvatarFallback>
           </Avatar>
           <div className="hidden md:flex flex-col items-start">
             <span className="text-sm font-medium text-foreground">
-              {profile?.full_name || user?.email || 'User'}
+              {displayName}
             </span>
             <span className="text-xs text-muted-foreground">
-              {role ? roleLabels[role] : 'Staff'}
+              {displayRole ? roleLabels[displayRole] || displayRole : 'Staff'}
             </span>
           </div>
         </Button>
@@ -62,10 +81,12 @@ export const UserMenu = () => {
           <User className="w-4 h-4 mr-2" />
           Profile
         </DropdownMenuItem>
-        <DropdownMenuItem className="text-foreground hover:bg-muted cursor-pointer">
-          <Settings className="w-4 h-4 mr-2" />
-          Settings
-        </DropdownMenuItem>
+        {!isStaffAuthenticated && (
+          <DropdownMenuItem className="text-foreground hover:bg-muted cursor-pointer">
+            <Settings className="w-4 h-4 mr-2" />
+            Settings
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator className="bg-border" />
         <DropdownMenuItem
           onClick={handleSignOut}

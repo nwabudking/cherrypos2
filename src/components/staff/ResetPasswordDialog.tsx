@@ -46,12 +46,10 @@ export const ResetPasswordDialog = ({
 
     setIsResetting(true);
     try {
-      const { error } = await supabase.functions.invoke("manage-staff", {
-        body: {
-          action: "reset-password",
-          userId: staff.id,
-          password: newPassword,
-        },
+      // Use the local staff password reset function
+      const { error } = await supabase.rpc("update_staff_password", {
+        p_staff_id: staff.id,
+        p_new_password: newPassword,
       });
 
       if (error) throw error;
