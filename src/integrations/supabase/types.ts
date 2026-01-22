@@ -205,6 +205,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_active: boolean | null
+          staff_user_id: string | null
           updated_at: string | null
           user_id: string
         }
@@ -214,6 +215,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          staff_user_id?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -223,6 +225,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          staff_user_id?: string | null
           updated_at?: string | null
           user_id?: string
         }
@@ -232,6 +235,13 @@ export type Database = {
             columns: ["bar_id"]
             isOneToOne: false
             referencedRelation: "bars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cashier_bar_assignments_staff_user_id_fkey"
+            columns: ["staff_user_id"]
+            isOneToOne: false
+            referencedRelation: "staff_users"
             referencedColumns: ["id"]
           },
         ]
@@ -684,6 +694,48 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_users: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          email: string | null
+          full_name: string
+          id: string
+          is_active: boolean | null
+          last_login_at: string | null
+          password_hash: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          email?: string | null
+          full_name: string
+          id?: string
+          is_active?: boolean | null
+          last_login_at?: string | null
+          password_hash: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          email?: string | null
+          full_name?: string
+          id?: string
+          is_active?: boolean | null
+          last_login_at?: string | null
+          password_hash?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
       stock_movements: {
         Row: {
           created_at: string | null
@@ -815,6 +867,16 @@ export type Database = {
         }
         Returns: Json
       }
+      create_staff_user: {
+        Args: {
+          p_email?: string
+          p_full_name: string
+          p_password: string
+          p_role?: Database["public"]["Enums"]["app_role"]
+          p_username: string
+        }
+        Returns: string
+      }
       deduct_bar_inventory: {
         Args: {
           p_bar_id: string
@@ -847,6 +909,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      staff_has_role: {
+        Args: {
+          p_role: Database["public"]["Enums"]["app_role"]
+          p_staff_id: string
+        }
+        Returns: boolean
+      }
       transfer_store_to_bar: {
         Args: {
           p_bar_id: string
@@ -855,6 +924,19 @@ export type Database = {
           p_quantity: number
         }
         Returns: Json
+      }
+      update_staff_password: {
+        Args: { p_new_password: string; p_staff_id: string }
+        Returns: boolean
+      }
+      verify_staff_password: {
+        Args: { p_password: string; p_username: string }
+        Returns: {
+          staff_email: string
+          staff_id: string
+          staff_name: string
+          staff_role: Database["public"]["Enums"]["app_role"]
+        }[]
       }
     }
     Enums: {
